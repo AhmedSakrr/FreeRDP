@@ -62,9 +62,9 @@
  * http://www.codeproject.com/Articles/9504/Driver-Development-Part-1-Introduction-to-Drivers/
  */
 
-#define DEVICE_FILE_PREFIX_PATH		"\\Device\\"
+#define DEVICE_FILE_PREFIX_PATH "\\Device\\"
 
-char* GetDeviceFileNameWithoutPrefixA(LPCSTR lpName)
+static char* GetDeviceFileNameWithoutPrefixA(LPCSTR lpName)
 {
 	char* lpFileName;
 
@@ -74,11 +74,12 @@ char* GetDeviceFileNameWithoutPrefixA(LPCSTR lpName)
 	if (strncmp(lpName, DEVICE_FILE_PREFIX_PATH, sizeof(DEVICE_FILE_PREFIX_PATH) - 1) != 0)
 		return NULL;
 
-	lpFileName = _strdup(&lpName[strlen(DEVICE_FILE_PREFIX_PATH)]);
+	lpFileName =
+	    _strdup(&lpName[strnlen(DEVICE_FILE_PREFIX_PATH, sizeof(DEVICE_FILE_PREFIX_PATH))]);
 	return lpFileName;
 }
 
-char* GetDeviceFileUnixDomainSocketBaseFilePathA()
+static char* GetDeviceFileUnixDomainSocketBaseFilePathA(void)
 {
 	char* lpTempPath;
 	char* lpPipePath;
@@ -92,7 +93,7 @@ char* GetDeviceFileUnixDomainSocketBaseFilePathA()
 	return lpPipePath;
 }
 
-char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
+static char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
 {
 	char* lpPipePath = NULL;
 	char* lpFileName = NULL;
@@ -110,7 +111,7 @@ char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
 		return NULL;
 	}
 
-	lpFilePath = GetCombinedPath(lpPipePath, (char*) lpFileName);
+	lpFilePath = GetCombinedPath(lpPipePath, (char*)lpFileName);
 	free(lpPipePath);
 	free(lpFileName);
 	return lpFilePath;
@@ -122,8 +123,8 @@ char* GetDeviceFileUnixDomainSocketFilePathA(LPCSTR lpName)
  */
 
 NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtensionSize,
-                           PUNICODE_STRING DeviceName,
-                           DEVICE_TYPE DeviceType, ULONG DeviceCharacteristics, BOOLEAN Exclusive,
+                           PUNICODE_STRING DeviceName, DEVICE_TYPE DeviceType,
+                           ULONG DeviceCharacteristics, BOOLEAN Exclusive,
                            PDEVICE_OBJECT_EX* DeviceObject)
 {
 	int status;
@@ -134,7 +135,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 	if (!DeviceBasePath)
 		return STATUS_NO_MEMORY;
 
-	if (!PathFileExistsA(DeviceBasePath))
+	if (!winpr_PathFileExists(DeviceBasePath))
 	{
 		if (mkdir(DeviceBasePath, S_IRUSR | S_IWUSR | S_IXUSR) != 0)
 		{
@@ -144,7 +145,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 	}
 
 	free(DeviceBasePath);
-	pDeviceObjectEx = (DEVICE_OBJECT_EX*) calloc(1, sizeof(DEVICE_OBJECT_EX));
+	pDeviceObjectEx = (DEVICE_OBJECT_EX*)calloc(1, sizeof(DEVICE_OBJECT_EX));
 
 	if (!pDeviceObjectEx)
 		return STATUS_NO_MEMORY;
@@ -158,8 +159,8 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 		return STATUS_NO_MEMORY;
 	}
 
-	pDeviceObjectEx->DeviceFileName = GetDeviceFileUnixDomainSocketFilePathA(
-	                                      pDeviceObjectEx->DeviceName);
+	pDeviceObjectEx->DeviceFileName =
+	    GetDeviceFileUnixDomainSocketFilePathA(pDeviceObjectEx->DeviceName);
 
 	if (!pDeviceObjectEx->DeviceFileName)
 	{
@@ -168,7 +169,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 		return STATUS_NO_MEMORY;
 	}
 
-	if (PathFileExistsA(pDeviceObjectEx->DeviceFileName))
+	if (winpr_PathFileExists(pDeviceObjectEx->DeviceFileName))
 	{
 		if (unlink(pDeviceObjectEx->DeviceFileName) == -1)
 		{
@@ -210,7 +211,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 		}
 	}
 
-	*((ULONG_PTR*)(DeviceObject)) = (ULONG_PTR) pDeviceObjectEx;
+	*((ULONG_PTR*)(DeviceObject)) = (ULONG_PTR)pDeviceObjectEx;
 	return STATUS_SUCCESS;
 }
 
@@ -222,7 +223,7 @@ NTSTATUS _IoCreateDeviceEx(PDRIVER_OBJECT_EX DriverObject, ULONG DeviceExtension
 VOID _IoDeleteDeviceEx(PDEVICE_OBJECT_EX DeviceObject)
 {
 	DEVICE_OBJECT_EX* pDeviceObjectEx;
-	pDeviceObjectEx = (DEVICE_OBJECT_EX*) DeviceObject;
+	pDeviceObjectEx = (DEVICE_OBJECT_EX*)DeviceObject;
 
 	if (!pDeviceObjectEx)
 		return;
@@ -231,26 +232,6 @@ VOID _IoDeleteDeviceEx(PDEVICE_OBJECT_EX DeviceObject)
 	free(pDeviceObjectEx->DeviceName);
 	free(pDeviceObjectEx->DeviceFileName);
 	free(pDeviceObjectEx);
-}
-
-/**
- * IoCreateSymbolicLink:
- * http://msdn.microsoft.com/en-us/library/windows/hardware/ff549043/
- */
-
-NTSTATUS _IoCreateSymbolicLinkEx(PUNICODE_STRING SymbolicLinkName, PUNICODE_STRING DeviceName)
-{
-	return STATUS_SUCCESS;
-}
-
-/**
- * IoDeleteSymbolicLink:
- * http://msdn.microsoft.com/en-us/library/windows/hardware/ff549085/
- */
-
-NTSTATUS _IoDeleteSymbolicLinkEx(PUNICODE_STRING SymbolicLinkName)
-{
-	return STATUS_SUCCESS;
 }
 
 #endif

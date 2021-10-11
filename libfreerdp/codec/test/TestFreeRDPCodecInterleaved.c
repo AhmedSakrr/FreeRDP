@@ -18,9 +18,10 @@
 static BOOL run_encode_decode_single(UINT16 bpp, BITMAP_INTERLEAVED_CONTEXT* encoder,
                                      BITMAP_INTERLEAVED_CONTEXT* decoder
 #if defined(WITH_PROFILER)
-                                     , PROFILER* profiler_comp, PROFILER* profiler_decomp
+                                     ,
+                                     PROFILER* profiler_comp, PROFILER* profiler_decomp
 #endif
-                                    )
+)
 {
 	BOOL rc2 = FALSE;
 	BOOL rc;
@@ -35,9 +36,9 @@ static BOOL run_encode_decode_single(UINT16 bpp, BITMAP_INTERLEAVED_CONTEXT* enc
 	const size_t SrcSize = step * h;
 	const float maxDiff = 4.0f * ((bpp < 24) ? 2.0f : 1.0f);
 	UINT32 DstSize = SrcSize;
-	BYTE* pSrcData = malloc(SrcSize);
-	BYTE* pDstData = malloc(SrcSize);
-	BYTE* tmp = malloc(SrcSize);
+	BYTE* pSrcData = calloc(1, SrcSize);
+	BYTE* pDstData = calloc(1, SrcSize);
+	BYTE* tmp = calloc(1, SrcSize);
 
 	if (!pSrcData || !pDstData || !tmp)
 		goto fail;
@@ -48,16 +49,16 @@ static BOOL run_encode_decode_single(UINT16 bpp, BITMAP_INTERLEAVED_CONTEXT* enc
 		goto fail;
 
 	PROFILER_ENTER(profiler_comp);
-	rc = interleaved_compress(encoder, tmp, &DstSize, w, h, pSrcData,
-	                          format, step, x, y, NULL, bpp);
+	rc =
+	    interleaved_compress(encoder, tmp, &DstSize, w, h, pSrcData, format, step, x, y, NULL, bpp);
 	PROFILER_EXIT(profiler_comp);
 
 	if (!rc)
 		goto fail;
 
 	PROFILER_ENTER(profiler_decomp);
-	rc = interleaved_decompress(decoder, tmp, DstSize, w, h, bpp, pDstData,
-	                            format, step, x, y, w, h, NULL);
+	rc = interleaved_decompress(decoder, tmp, DstSize, w, h, bpp, pDstData, format, step, x, y, w,
+	                            h, NULL);
 	PROFILER_EXIT(profiler_decomp);
 
 	if (!rc)
@@ -132,13 +133,14 @@ static BOOL run_encode_decode(UINT16 bpp, BITMAP_INTERLEAVED_CONTEXT* encoder,
 	PROFILER_CREATE(profiler_comp, get_profiler_name(TRUE, bpp))
 	PROFILER_CREATE(profiler_decomp, get_profiler_name(FALSE, bpp))
 
-	for (x = 0; x < 500; x++)
+	for (x = 0; x < 50; x++)
 	{
 		if (!run_encode_decode_single(bpp, encoder, decoder
 #if defined(WITH_PROFILER)
-		                              , profiler_comp, profiler_decomp
+		                              ,
+		                              profiler_comp, profiler_decomp
 #endif
-		                             ))
+		                              ))
 			goto fail;
 	}
 
@@ -152,9 +154,38 @@ fail:
 	PROFILER_FREE(profiler_decomp);
 	return rc;
 }
+
+static BOOL TestColorConversion(void)
+{
+	const UINT32 formats[] = { PIXEL_FORMAT_RGB15,  PIXEL_FORMAT_BGR15, PIXEL_FORMAT_ABGR15,
+		                       PIXEL_FORMAT_ARGB15, PIXEL_FORMAT_BGR16, PIXEL_FORMAT_RGB16 };
+	UINT32 x;
+
+	/* Check color conversion 15/16 -> 32bit maps to proper values */
+	for (x = 0; x < ARRAYSIZE(formats); x++)
+	{
+		const UINT32 dstFormat = PIXEL_FORMAT_RGBA32;
+		const UINT32 format = formats[x];
+		const UINT32 colorLow = FreeRDPGetColor(format, 0, 0, 0, 255);
+		const UINT32 colorHigh = FreeRDPGetColor(format, 255, 255, 255, 255);
+		const UINT32 colorLow32 = FreeRDPConvertColor(colorLow, format, dstFormat, NULL);
+		const UINT32 colorHigh32 = FreeRDPConvertColor(colorHigh, format, dstFormat, NULL);
+		BYTE r, g, b, a;
+		SplitColor(colorLow32, dstFormat, &r, &g, &b, &a, NULL);
+		if ((r != 0) || (g != 0) || (b != 0))
+			return FALSE;
+
+		SplitColor(colorHigh32, dstFormat, &r, &g, &b, &a, NULL);
+		if ((r != 255) || (g != 255) || (b != 255))
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
 int TestFreeRDPCodecInterleaved(int argc, char* argv[])
 {
-	BITMAP_INTERLEAVED_CONTEXT* encoder, * decoder;
+	BITMAP_INTERLEAVED_CONTEXT *encoder, *decoder;
 	int rc = -1;
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
@@ -171,6 +202,9 @@ int TestFreeRDPCodecInterleaved(int argc, char* argv[])
 		goto fail;
 
 	if (!run_encode_decode(15, encoder, decoder))
+		goto fail;
+
+	if (!TestColorConversion())
 		goto fail;
 
 	rc = 0;

@@ -27,17 +27,16 @@
 #include <string.h>
 
 #include <winpr/wtypes.h>
+#include <winpr/assert.h>
 #include <winpr/crt.h>
+#include <winpr/file.h>
 
 #include "registry_reg.h"
 
 #include "../log.h"
 #define TAG WINPR_TAG("registry")
 
-#define WINPR_HKLM_HIVE		"/etc/winpr/HKLM.reg"
-
-static void reg_print_key(Reg* reg, RegKey* key);
-static void reg_print_value(Reg* reg, RegVal* value);
+#define WINPR_HKLM_HIVE "/etc/winpr/HKLM.reg"
 
 struct reg_data_type
 {
@@ -46,39 +45,34 @@ struct reg_data_type
 	DWORD type;
 };
 
-static struct reg_data_type REG_DATA_TYPE_TABLE[] =
-{
-	{ "\"",		1,	REG_SZ		},
-	{ "dword:",	6,	REG_DWORD	},
-	{ "str:\"",	5,	REG_SZ		},
-	{ "str(2):\"",	8,	REG_EXPAND_SZ	},
-	{ "str(7):\"",	8,	REG_MULTI_SZ	},
-	{ "hex:",	4,	REG_BINARY	},
-	{ "hex(2):\"",	8,	REG_EXPAND_SZ	},
-	{ "hex(7):\"",	8,	REG_MULTI_SZ	},
-	{ "hex(b):\"",	8,	REG_QWORD	},
-	{ NULL,		0,	0		}
-};
+static struct reg_data_type REG_DATA_TYPE_TABLE[] = { { "\"", 1, REG_SZ },
+	                                                  { "dword:", 6, REG_DWORD },
+	                                                  { "str:\"", 5, REG_SZ },
+	                                                  { "str(2):\"", 8, REG_EXPAND_SZ },
+	                                                  { "str(7):\"", 8, REG_MULTI_SZ },
+	                                                  { "hex:", 4, REG_BINARY },
+	                                                  { "hex(2):\"", 8, REG_EXPAND_SZ },
+	                                                  { "hex(7):\"", 8, REG_MULTI_SZ },
+	                                                  { "hex(b):\"", 8, REG_QWORD },
+	                                                  { NULL, 0, 0 } };
 
-static char* REG_DATA_TYPE_STRINGS[] =
-{
-	"REG_NONE",
-	"REG_SZ",
-	"REG_EXPAND_SZ",
-	"REG_BINARY",
-	"REG_DWORD",
-	"REG_DWORD_BIG_ENDIAN",
-	"REG_LINK",
-	"REG_MULTI_SZ",
-	"REG_RESOURCE_LIST",
-	"REG_FULL_RESOURCE_DESCRIPTOR",
-	"REG_RESOURCE_REQUIREMENTS_LIST",
-	"REG_QWORD"
-};
+static char* REG_DATA_TYPE_STRINGS[] = { "REG_NONE",
+	                                     "REG_SZ",
+	                                     "REG_EXPAND_SZ",
+	                                     "REG_BINARY",
+	                                     "REG_DWORD",
+	                                     "REG_DWORD_BIG_ENDIAN",
+	                                     "REG_LINK",
+	                                     "REG_MULTI_SZ",
+	                                     "REG_RESOURCE_LIST",
+	                                     "REG_FULL_RESOURCE_DESCRIPTOR",
+	                                     "REG_RESOURCE_REQUIREMENTS_LIST",
+	                                     "REG_QWORD" };
 
 static void reg_load_start(Reg* reg)
 {
 	INT64 file_size;
+	WINPR_ASSERT(reg);
 	_fseeki64(reg->fp, 0, SEEK_END);
 	file_size = _ftelli64(reg->fp);
 	_fseeki64(reg->fp, 0, SEEK_SET);
@@ -89,12 +83,12 @@ static void reg_load_start(Reg* reg)
 	if (file_size < 1)
 		return;
 
-	reg->buffer = (char*) malloc(file_size + 2);
+	reg->buffer = (char*)malloc((size_t)file_size + 2);
 
 	if (!reg->buffer)
-		return ;
+		return;
 
-	if (fread(reg->buffer, file_size, 1, reg->fp) != 1)
+	if (fread(reg->buffer, (size_t)file_size, 1, reg->fp) != 1)
 	{
 		free(reg->buffer);
 		reg->buffer = NULL;
@@ -122,11 +116,13 @@ static RegVal* reg_load_value(Reg* reg, RegKey* key)
 {
 	int index;
 	char* p[5];
-	int length;
+	size_t length;
 	char* name;
 	char* type;
 	char* data;
 	RegVal* value;
+	WINPR_ASSERT(reg);
+	WINPR_ASSERT(key);
 	p[0] = reg->line + 1;
 	p[1] = strstr(p[0], "\"=");
 	p[2] = p[1] + 2;
@@ -139,14 +135,14 @@ static RegVal* reg_load_value(Reg* reg, RegKey* key)
 
 	data = p[3] + 1;
 	length = p[1] - p[0];
-	name = (char*) malloc(length + 1);
+	name = (char*)malloc(length + 1);
 
 	if (!name)
 		return NULL;
 
 	memcpy(name, p[0], length);
 	name[length] = '\0';
-	value = (RegVal*) malloc(sizeof(RegVal));
+	value = (RegVal*)malloc(sizeof(RegVal));
 
 	if (!value)
 	{
@@ -241,6 +237,7 @@ static char* reg_load_get_next_line(Reg* reg)
 
 static char* reg_load_peek_next_line(Reg* reg)
 {
+	WINPR_ASSERT(reg);
 	return reg->next_line;
 }
 
@@ -249,7 +246,10 @@ static void reg_insert_key(Reg* reg, RegKey* key, RegKey* subkey)
 	char* name;
 	char* path;
 	char* save;
-	int length;
+	size_t length;
+	WINPR_ASSERT(reg);
+	WINPR_ASSERT(key);
+	WINPR_ASSERT(subkey);
 	path = _strdup(subkey->name);
 
 	if (!path)
@@ -285,9 +285,11 @@ static RegKey* reg_load_key(Reg* reg, RegKey* key)
 	int length;
 	char* line;
 	RegKey* subkey;
+	WINPR_ASSERT(reg);
+	WINPR_ASSERT(key);
 	p[0] = reg->line + 1;
 	p[1] = strrchr(p[0], ']');
-	subkey = (RegKey*) malloc(sizeof(RegKey));
+	subkey = (RegKey*)malloc(sizeof(RegKey));
 
 	if (!subkey)
 		return NULL;
@@ -295,7 +297,7 @@ static RegKey* reg_load_key(Reg* reg, RegKey* key)
 	subkey->values = NULL;
 	subkey->prev = subkey->next = NULL;
 	length = p[1] - p[0];
-	subkey->name = (char*) malloc(length + 1);
+	subkey->name = (char*)malloc(length + 1);
 
 	if (!subkey->name)
 	{
@@ -343,7 +345,7 @@ static RegKey* reg_load_key(Reg* reg, RegKey* key)
 	return subkey;
 }
 
-void reg_load(Reg* reg)
+static void reg_load(Reg* reg)
 {
 	reg_load_start(reg);
 
@@ -362,6 +364,8 @@ void reg_load(Reg* reg)
 
 static void reg_unload_value(Reg* reg, RegVal* value)
 {
+	WINPR_ASSERT(reg);
+	WINPR_ASSERT(value);
 	if (value->type == REG_DWORD)
 	{
 	}
@@ -381,6 +385,8 @@ static void reg_unload_key(Reg* reg, RegKey* key)
 {
 	RegVal* pValue;
 	RegVal* pValueNext;
+	WINPR_ASSERT(reg);
+	WINPR_ASSERT(key);
 	pValue = key->values;
 
 	while (pValue != NULL)
@@ -394,10 +400,11 @@ static void reg_unload_key(Reg* reg, RegKey* key)
 	free(key);
 }
 
-void reg_unload(Reg* reg)
+static void reg_unload(Reg* reg)
 {
 	RegKey* pKey;
 	RegKey* pKeyNext;
+	WINPR_ASSERT(reg);
 	pKey = reg->root_key->subkeys;
 
 	while (pKey != NULL)
@@ -413,7 +420,7 @@ void reg_unload(Reg* reg)
 Reg* reg_open(BOOL read_only)
 {
 	Reg* reg;
-	reg = (Reg*) malloc(sizeof(Reg));
+	reg = (Reg*)malloc(sizeof(Reg));
 
 	if (!reg)
 		return NULL;
@@ -423,14 +430,14 @@ Reg* reg_open(BOOL read_only)
 
 	if (reg->read_only)
 	{
-		reg->fp = fopen(reg->filename, "r");
+		reg->fp = winpr_fopen(reg->filename, "r");
 	}
 	else
 	{
-		reg->fp = fopen(reg->filename, "r+");
+		reg->fp = winpr_fopen(reg->filename, "r+");
 
 		if (!reg->fp)
-			reg->fp = fopen(reg->filename, "w+");
+			reg->fp = winpr_fopen(reg->filename, "w+");
 	}
 
 	if (!reg->fp)
@@ -439,7 +446,7 @@ Reg* reg_open(BOOL read_only)
 		return NULL;
 	}
 
-	reg->root_key = (RegKey*) malloc(sizeof(RegKey));
+	reg->root_key = (RegKey*)malloc(sizeof(RegKey));
 
 	if (!reg->root_key)
 	{
@@ -462,48 +469,5 @@ void reg_close(Reg* reg)
 		reg_unload(reg);
 		fclose(reg->fp);
 		free(reg);
-	}
-}
-
-void reg_print_value(Reg* reg, RegVal* value)
-{
-	WLog_INFO(TAG, "\"%s\"=", value->name);
-
-	if (value->type == REG_DWORD)
-	{
-		WLog_INFO(TAG, "dword:%08"PRIX32"", value->data.dword);
-	}
-	else if (value->type == REG_SZ)
-	{
-		WLog_INFO(TAG, "%s\"", value->data.string);
-	}
-	else
-	{
-		WLog_ERR(TAG, "unimplemented format: %s", REG_DATA_TYPE_STRINGS[value->type]);
-	}
-}
-
-void reg_print_key(Reg* reg, RegKey* key)
-{
-	RegVal* pValue;
-	pValue = key->values;
-	WLog_INFO(TAG, "[%s]", key->name);
-
-	while (pValue != NULL)
-	{
-		reg_print_value(reg, pValue);
-		pValue = pValue->next;
-	}
-}
-
-void reg_print(Reg* reg)
-{
-	RegKey* pKey;
-	pKey = reg->root_key->subkeys;
-
-	while (pKey != NULL)
-	{
-		reg_print_key(reg, pKey);
-		pKey = pKey->next;
 	}
 }

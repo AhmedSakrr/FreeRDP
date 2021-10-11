@@ -19,10 +19,10 @@
 #ifndef RDTK_FONT_PRIVATE_H
 #define RDTK_FONT_PRIVATE_H
 
+#include <stdint.h>
+
 #include <rdtk/rdtk.h>
 
-#include <winpr/crt.h>
-#include <winpr/synch.h>
 #include <winpr/image.h>
 
 #include "rdtk_engine.h"
@@ -36,37 +36,38 @@ struct rdtk_glyph
 	int rectY;
 	int rectWidth;
 	int rectHeight;
-	BYTE code[4];
+	uint8_t code[4];
 };
 
 struct rdtk_font
 {
 	rdtkEngine* engine;
 
-	int size;
-	int height;
+	uint32_t size;
+	uint16_t height;
 	char* family;
 	char* style;
 	wImage* image;
-	int glyphCount;
+	uint16_t glyphCount;
 	rdtkGlyph* glyphs;
 };
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int rdtk_font_text_draw_size(rdtkFont* font, int* width, int* height, const char* text);
+	int rdtk_font_text_draw_size(rdtkFont* font, uint16_t* width, uint16_t* height,
+	                             const char* text);
 
-int rdtk_font_engine_init(rdtkEngine* engine);
-int rdtk_font_engine_uninit(rdtkEngine* engine);
+	int rdtk_font_engine_init(rdtkEngine* engine);
+	int rdtk_font_engine_uninit(rdtkEngine* engine);
 
-rdtkFont* rdtk_font_new(rdtkEngine* engine, const char* path, const char* file);
-void rdtk_font_free(rdtkFont* font);
+	rdtkFont* rdtk_font_new(rdtkEngine* engine, const char* path, const char* file);
+	void rdtk_font_free(rdtkFont* font);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* RDTK_FONT_PRIVATE_H */
-

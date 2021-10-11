@@ -19,6 +19,7 @@
 #ifndef RDTK_NINE_PATCH_PRIVATE_H
 #define RDTK_NINE_PATCH_PRIVATE_H
 
+#include <stdint.h>
 #include <rdtk/rdtk.h>
 
 #include <winpr/image.h>
@@ -36,7 +37,7 @@ struct rdtk_nine_patch
 	int width;
 	int height;
 	int scanline;
-	BYTE* data;
+	uint8_t* data;
 
 	int scaleLeft;
 	int scaleRight;
@@ -54,21 +55,22 @@ struct rdtk_nine_patch
 };
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int rdtk_nine_patch_set_image(rdtkNinePatch* ninePatch, wImage* image);
-int rdtk_nine_patch_draw(rdtkSurface* surface, int nXDst, int nYDst, int nWidth, int nHeight, rdtkNinePatch* ninePatch);
+	int rdtk_nine_patch_set_image(rdtkNinePatch* ninePatch, wImage* image);
+	int rdtk_nine_patch_draw(rdtkSurface* surface, int nXDst, int nYDst, int nWidth, int nHeight,
+	                         rdtkNinePatch* ninePatch);
 
-int rdtk_nine_patch_engine_init(rdtkEngine* engine);
-int rdtk_nine_patch_engine_uninit(rdtkEngine* engine);
+	int rdtk_nine_patch_engine_init(rdtkEngine* engine);
+	int rdtk_nine_patch_engine_uninit(rdtkEngine* engine);
 
-rdtkNinePatch* rdtk_nine_patch_new(rdtkEngine* engine);
-void rdtk_nine_patch_free(rdtkNinePatch* ninePatch);
+	rdtkNinePatch* rdtk_nine_patch_new(rdtkEngine* engine);
+	void rdtk_nine_patch_free(rdtkNinePatch* ninePatch);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* RDTK_NINE_PATCH_PRIVATE_H */
-

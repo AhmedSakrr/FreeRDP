@@ -23,7 +23,7 @@
 
 #if defined __linux__ && !defined ANDROID
 
-#include <assert.h>
+#include <winpr/assert.h>
 #include <errno.h>
 #include <termios.h>
 #include <unistd.h>
@@ -36,7 +36,7 @@
 
 BOOL _comm_set_permissive(HANDLE hDevice, BOOL permissive)
 {
-	WINPR_COMM* pComm = (WINPR_COMM*) hDevice;
+	WINPR_COMM* pComm = (WINPR_COMM*)hDevice;
 
 	if (hDevice == INVALID_HANDLE_VALUE)
 	{
@@ -54,7 +54,6 @@ BOOL _comm_set_permissive(HANDLE hDevice, BOOL permissive)
 	return TRUE;
 }
 
-
 /* Computes VTIME in deciseconds from Ti in milliseconds */
 static UCHAR _vtime(ULONG Ti)
 {
@@ -70,7 +69,6 @@ static UCHAR _vtime(ULONG Ti)
 		return Ti / 100;
 }
 
-
 /**
  * ERRORS:
  *   ERROR_INVALID_HANDLE
@@ -83,7 +81,7 @@ static UCHAR _vtime(ULONG Ti)
 BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
                   LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped)
 {
-	WINPR_COMM* pComm = (WINPR_COMM*) hDevice;
+	WINPR_COMM* pComm = (WINPR_COMM*)hDevice;
 	int biggestFd = -1;
 	fd_set read_set;
 	int nbFds;
@@ -115,8 +113,7 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 
 	if (lpNumberOfBytesRead == NULL)
 	{
-		SetLastError(
-		    ERROR_INVALID_PARAMETER); /* since we doesn't suppport lpOverlapped != NULL */
+		SetLastError(ERROR_INVALID_PARAMETER); /* since we doesn't suppport lpOverlapped != NULL */
 		goto return_false;
 	}
 
@@ -135,8 +132,7 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 
 	if (currentTermios.c_lflag & ICANON)
 	{
-		CommLog_Print(WLOG_WARN,
-		              "Canonical mode not supported"); /* the timeout could not be set */
+		CommLog_Print(WLOG_WARN, "Canonical mode not supported"); /* the timeout could not be set */
 		SetLastError(ERROR_NOT_SUPPORTED);
 		goto return_false;
 	}
@@ -144,33 +140,38 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 	/* http://msdn.microsoft.com/en-us/library/hh439614%28v=vs.85%29.aspx
 	 * http://msdn.microsoft.com/en-us/library/windows/hardware/hh439614%28v=vs.85%29.aspx
 	 *
-	 * ReadIntervalTimeout  | ReadTotalTimeoutMultiplier | ReadTotalTimeoutConstant | VMIN | VTIME | TMAX  |
-	 *         0            |            0               |           0              |   N  |   0   | INDEF | Blocks for N bytes available.
-	 *   0< Ti <MAXULONG	|            0               |           0              |   N  |   Ti  | INDEF | Blocks on first byte, then use Ti between bytes.
-	 *       MAXULONG       |            0               |           0              |   0  |   0   |   0   | Returns immediately with bytes available (don't block)
-	 *       MAXULONG       |         MAXULONG           |      0< Tc <MAXULONG     |   N  |   0   |   Tc  | Blocks on first byte during Tc or returns immediately whith bytes available
-	 *       MAXULONG       |            m               |        MAXULONG          |                      | Invalid
-	 *         0            |            m               |      0< Tc <MAXULONG     |   N  |   0   |  Tmax | Blocks on first byte during Tmax or returns immediately whith bytes available
-	 *   0< Ti <MAXULONG    |            m               |      0< Tc <MAXULONG     |   N  |   Ti  |  Tmax | Blocks on first byte, then use Ti between bytes. Tmax is used for the whole system call.
+	 * ReadIntervalTimeout  | ReadTotalTimeoutMultiplier | ReadTotalTimeoutConstant | VMIN | VTIME |
+	 * TMAX  | 0            |            0               |           0              |   N  |   0   |
+	 * INDEF | Blocks for N bytes available. 0< Ti <MAXULONG	|            0               | 0 |
+	 * N  |   Ti  | INDEF | Blocks on first byte, then use Ti between bytes. MAXULONG       | 0 | 0
+	 * |   0  |   0   |   0   | Returns immediately with bytes available (don't block) MAXULONG |
+	 * MAXULONG           |      0< Tc <MAXULONG     |   N  |   0   |   Tc  | Blocks on first byte
+	 * during Tc or returns immediately whith bytes available MAXULONG       |            m |
+	 * MAXULONG          |                      | Invalid 0            |            m |      0< Tc
+	 * <MAXULONG     |   N  |   0   |  Tmax | Blocks on first byte during Tmax or returns
+	 * immediately whith bytes available 0< Ti <MAXULONG    |            m               |      0<
+	 * Tc <MAXULONG     |   N  |   Ti  |  Tmax | Blocks on first byte, then use Ti between bytes.
+	 * Tmax is used for the whole system call.
 	 */
 	/* NB: timeouts are in milliseconds, VTIME are in deciseconds and is an unsigned char */
-	/* FIXME: double check whether open(pComm->fd_read_event, O_NONBLOCK) doesn't conflict with above use cases */
+	/* FIXME: double check whether open(pComm->fd_read_event, O_NONBLOCK) doesn't conflict with
+	 * above use cases */
 	pTimeouts = &(pComm->timeouts);
 
-	if ((pTimeouts->ReadIntervalTimeout == MAXULONG)
-	    && (pTimeouts->ReadTotalTimeoutConstant == MAXULONG))
+	if ((pTimeouts->ReadIntervalTimeout == MAXULONG) &&
+	    (pTimeouts->ReadTotalTimeoutConstant == MAXULONG))
 	{
-		CommLog_Print(WLOG_WARN,
-		              "ReadIntervalTimeout and ReadTotalTimeoutConstant cannot be both set to MAXULONG");
+		CommLog_Print(
+		    WLOG_WARN,
+		    "ReadIntervalTimeout and ReadTotalTimeoutConstant cannot be both set to MAXULONG");
 		SetLastError(ERROR_INVALID_PARAMETER);
 		goto return_false;
 	}
 
 	/* VMIN */
 
-	if ((pTimeouts->ReadIntervalTimeout == MAXULONG)
-	    && (pTimeouts->ReadTotalTimeoutMultiplier == 0)
-	    && (pTimeouts->ReadTotalTimeoutConstant == 0))
+	if ((pTimeouts->ReadIntervalTimeout == MAXULONG) &&
+	    (pTimeouts->ReadTotalTimeoutMultiplier == 0) && (pTimeouts->ReadTotalTimeoutConstant == 0))
 	{
 		vmin = 0;
 	}
@@ -186,8 +187,7 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 
 	/* VTIME */
 
-	if ((pTimeouts->ReadIntervalTimeout > 0)
-	    && (pTimeouts->ReadIntervalTimeout < MAXULONG))
+	if ((pTimeouts->ReadIntervalTimeout > 0) && (pTimeouts->ReadIntervalTimeout < MAXULONG))
 	{
 		/* Ti */
 		vtime = _vtime(pTimeouts->ReadIntervalTimeout);
@@ -196,8 +196,8 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 	/* TMAX */
 	pTmaxTimeout = &tmaxTimeout;
 
-	if ((pTimeouts->ReadIntervalTimeout == MAXULONG)
-	    && (pTimeouts->ReadTotalTimeoutMultiplier == MAXULONG))
+	if ((pTimeouts->ReadIntervalTimeout == MAXULONG) &&
+	    (pTimeouts->ReadTotalTimeoutMultiplier == MAXULONG))
 	{
 		/* Tc */
 		Tmax = pTimeouts->ReadTotalTimeoutConstant;
@@ -209,21 +209,21 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 		       pTimeouts->ReadTotalTimeoutConstant;
 
 		/* INDEFinitely */
-		if ((Tmax == 0) && (pTimeouts->ReadIntervalTimeout < MAXULONG)
-		    && (pTimeouts->ReadTotalTimeoutMultiplier == 0))
+		if ((Tmax == 0) && (pTimeouts->ReadIntervalTimeout < MAXULONG) &&
+		    (pTimeouts->ReadTotalTimeoutMultiplier == 0))
 			pTmaxTimeout = NULL;
 	}
 
-	if ((currentTermios.c_cc[VMIN] != vmin)
-	    || (currentTermios.c_cc[VTIME] != vtime))
+	if ((currentTermios.c_cc[VMIN] != vmin) || (currentTermios.c_cc[VTIME] != vtime))
 	{
-		currentTermios.c_cc[VMIN]  = vmin;
+		currentTermios.c_cc[VMIN] = vmin;
 		currentTermios.c_cc[VTIME] = vtime;
 
 		if (tcsetattr(pComm->fd, TCSANOW, &currentTermios) < 0)
 		{
 			CommLog_Print(WLOG_WARN,
-			              "CommReadFile failure, could not apply new timeout values: VMIN=%"PRIu8", VTIME=%"PRIu8"",
+			              "CommReadFile failure, could not apply new timeout values: VMIN=%" PRIu8
+			              ", VTIME=%" PRIu8 "",
 			              vmin, vtime);
 			SetLastError(ERROR_IO_DEVICE);
 			goto return_false;
@@ -238,7 +238,7 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 
 		if (Tmax > 0) /* return immdiately if Tmax == 0 */
 		{
-			pTmaxTimeout->tv_sec = Tmax / 1000; /* s */
+			pTmaxTimeout->tv_sec = Tmax / 1000;           /* s */
 			pTmaxTimeout->tv_usec = (Tmax % 1000) * 1000; /* us */
 		}
 	}
@@ -253,16 +253,15 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 		biggestFd = pComm->fd_read_event;
 
 	FD_ZERO(&read_set);
-	assert(pComm->fd_read_event < FD_SETSIZE);
-	assert(pComm->fd_read < FD_SETSIZE);
+	WINPR_ASSERT(pComm->fd_read_event < FD_SETSIZE);
+	WINPR_ASSERT(pComm->fd_read < FD_SETSIZE);
 	FD_SET(pComm->fd_read_event, &read_set);
 	FD_SET(pComm->fd_read, &read_set);
 	nbFds = select(biggestFd + 1, &read_set, NULL, NULL, pTmaxTimeout);
 
 	if (nbFds < 0)
 	{
-		CommLog_Print(WLOG_WARN, "select() failure, errno=[%d] %s\n", errno,
-		              strerror(errno));
+		CommLog_Print(WLOG_WARN, "select() failure, errno=[%d] %s\n", errno, strerror(errno));
 		SetLastError(ERROR_IO_DEVICE);
 		goto return_false;
 	}
@@ -284,8 +283,8 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 		{
 			if (errno == EAGAIN)
 			{
-				assert(FALSE); /* not quite sure this should ever happen */
-				/* keep on */
+				WINPR_ASSERT(FALSE); /* not quite sure this should ever happen */
+				                     /* keep on */
 			}
 			else
 			{
@@ -295,16 +294,16 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 				/* FIXME: goto return_false ? */
 			}
 
-			assert(errno == EAGAIN);
+			WINPR_ASSERT(errno == EAGAIN);
 		}
 
-		if (event == FREERDP_PURGE_RXABORT)
+		if (event == WINPR_PURGE_RXABORT)
 		{
 			SetLastError(ERROR_CANCELLED);
 			goto return_false;
 		}
 
-		assert(event == FREERDP_PURGE_RXABORT); /* no other expected event so far */
+		WINPR_ASSERT(event == WINPR_PURGE_RXABORT); /* no other expected event so far */
 	}
 
 	if (FD_ISSET(pComm->fd_read, &read_set))
@@ -315,12 +314,14 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 		if (nbRead < 0)
 		{
 			CommLog_Print(WLOG_WARN,
-			              "CommReadFile failed, ReadIntervalTimeout=%"PRIu32", ReadTotalTimeoutMultiplier=%"PRIu32", ReadTotalTimeoutConstant=%"PRIu32" VMIN=%u, VTIME=%u",
+			              "CommReadFile failed, ReadIntervalTimeout=%" PRIu32
+			              ", ReadTotalTimeoutMultiplier=%" PRIu32
+			              ", ReadTotalTimeoutConstant=%" PRIu32 " VMIN=%u, VTIME=%u",
 			              pTimeouts->ReadIntervalTimeout, pTimeouts->ReadTotalTimeoutMultiplier,
-			              pTimeouts->ReadTotalTimeoutConstant,
-			              currentTermios.c_cc[VMIN], currentTermios.c_cc[VTIME]);
+			              pTimeouts->ReadTotalTimeoutConstant, currentTermios.c_cc[VMIN],
+			              currentTermios.c_cc[VTIME]);
 			CommLog_Print(WLOG_WARN,
-			              "CommReadFile failed, nNumberOfBytesToRead=%"PRIu32", errno=[%d] %s",
+			              "CommReadFile failed, nNumberOfBytesToRead=%" PRIu32 ", errno=[%d] %s",
 			              nNumberOfBytesToRead, errno, strerror(errno));
 
 			if (errno == EAGAIN)
@@ -335,7 +336,7 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 			}
 			else
 			{
-				assert(FALSE);
+				WINPR_ASSERT(FALSE);
 				SetLastError(ERROR_IO_DEVICE);
 				goto return_false;
 			}
@@ -351,16 +352,16 @@ BOOL CommReadFile(HANDLE hDevice, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 		*lpNumberOfBytesRead = nbRead;
 
 		EnterCriticalSection(&pComm->EventsLock);
-		if (pComm->PendingEvents & SERIAL_EV_FREERDP_WAITING)
+		if (pComm->PendingEvents & SERIAL_EV_WINPR_WAITING)
 		{
 			if (pComm->eventChar != '\0' && memchr(lpBuffer, pComm->eventChar, nbRead))
-					pComm->PendingEvents |= SERIAL_EV_RXCHAR;
+				pComm->PendingEvents |= SERIAL_EV_RXCHAR;
 		}
 		LeaveCriticalSection(&pComm->EventsLock);
 		goto return_true;
 	}
 
-	assert(FALSE);
+	WINPR_ASSERT(FALSE);
 	*lpNumberOfBytesRead = 0;
 return_false:
 	LeaveCriticalSection(&pComm->ReadLock);
@@ -370,7 +371,6 @@ return_true:
 	return TRUE;
 }
 
-
 /**
  * ERRORS:
  *   ERROR_INVALID_HANDLE
@@ -378,14 +378,12 @@ return_true:
  *   ERROR_INVALID_PARAMETER
  *   ERROR_BAD_DEVICE
  */
-BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
-                   DWORD nNumberOfBytesToWrite,
+BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
                    LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped)
 {
-	WINPR_COMM* pComm = (WINPR_COMM*) hDevice;
+	WINPR_COMM* pComm = (WINPR_COMM*)hDevice;
 	struct timeval tmaxTimeout, *pTmaxTimeout;
-	EnterCriticalSection(
-	    &pComm->WriteLock); /* KISSer by the function's beginning */
+	EnterCriticalSection(&pComm->WriteLock); /* KISSer by the function's beginning */
 
 	if (hDevice == INVALID_HANDLE_VALUE)
 	{
@@ -407,8 +405,7 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 
 	if (lpNumberOfBytesWritten == NULL)
 	{
-		SetLastError(
-		    ERROR_INVALID_PARAMETER); /* since we doesn't suppport lpOverlapped != NULL */
+		SetLastError(ERROR_INVALID_PARAMETER); /* since we doesn't suppport lpOverlapped != NULL */
 		goto return_false;
 	}
 
@@ -424,8 +421,7 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 	/* discard a possible and no more relevant event */
 	eventfd_read(pComm->fd_write_event, NULL);
 	/* ms */
-	ULONGLONG Tmax = nNumberOfBytesToWrite *
-	                 pComm->timeouts.WriteTotalTimeoutMultiplier +
+	ULONGLONG Tmax = nNumberOfBytesToWrite * pComm->timeouts.WriteTotalTimeoutMultiplier +
 	                 pComm->timeouts.WriteTotalTimeoutConstant;
 	/* NB: select() may update the timeout argument to indicate
 	 * how much time was left. Keep the timeout variable out of
@@ -435,11 +431,11 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 
 	if (Tmax > 0)
 	{
-		pTmaxTimeout->tv_sec = Tmax / 1000; /* s */
+		pTmaxTimeout->tv_sec = Tmax / 1000;           /* s */
 		pTmaxTimeout->tv_usec = (Tmax % 1000) * 1000; /* us */
 	}
-	else if ((pComm->timeouts.WriteTotalTimeoutMultiplier == 0)
-	         && (pComm->timeouts.WriteTotalTimeoutConstant == 0))
+	else if ((pComm->timeouts.WriteTotalTimeoutMultiplier == 0) &&
+	         (pComm->timeouts.WriteTotalTimeoutConstant == 0))
 	{
 		pTmaxTimeout = NULL;
 	}
@@ -458,16 +454,15 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 
 		FD_ZERO(&event_set);
 		FD_ZERO(&write_set);
-		assert(pComm->fd_write_event < FD_SETSIZE);
-		assert(pComm->fd_write < FD_SETSIZE);
+		WINPR_ASSERT(pComm->fd_write_event < FD_SETSIZE);
+		WINPR_ASSERT(pComm->fd_write < FD_SETSIZE);
 		FD_SET(pComm->fd_write_event, &event_set);
 		FD_SET(pComm->fd_write, &write_set);
 		nbFds = select(biggestFd + 1, &event_set, &write_set, NULL, pTmaxTimeout);
 
 		if (nbFds < 0)
 		{
-			CommLog_Print(WLOG_WARN, "select() failure, errno=[%d] %s\n", errno,
-			              strerror(errno));
+			CommLog_Print(WLOG_WARN, "select() failure, errno=[%d] %s\n", errno, strerror(errno));
 			SetLastError(ERROR_IO_DEVICE);
 			goto return_false;
 		}
@@ -489,27 +484,27 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 			{
 				if (errno == EAGAIN)
 				{
-					assert(FALSE); /* not quite sure this should ever happen */
-					/* keep on */
+					WINPR_ASSERT(FALSE); /* not quite sure this should ever happen */
+					                     /* keep on */
 				}
 				else
 				{
 					CommLog_Print(WLOG_WARN,
-					              "unexpected error on reading fd_write_event, errno=[%d] %s\n", errno,
-					              strerror(errno));
+					              "unexpected error on reading fd_write_event, errno=[%d] %s\n",
+					              errno, strerror(errno));
 					/* FIXME: goto return_false ? */
 				}
 
-				assert(errno == EAGAIN);
+				WINPR_ASSERT(errno == EAGAIN);
 			}
 
-			if (event == FREERDP_PURGE_TXABORT)
+			if (event == WINPR_PURGE_TXABORT)
 			{
 				SetLastError(ERROR_CANCELLED);
 				goto return_false;
 			}
 
-			assert(event == FREERDP_PURGE_TXABORT); /* no other expected event so far */
+			WINPR_ASSERT(event == WINPR_PURGE_TXABORT); /* no other expected event so far */
 		}
 
 		/* write_set */
@@ -517,14 +512,14 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 		if (FD_ISSET(pComm->fd_write, &write_set))
 		{
 			ssize_t nbWritten;
-			nbWritten = write(pComm->fd_write,
-			                  ((BYTE*)lpBuffer) + (*lpNumberOfBytesWritten),
+			nbWritten = write(pComm->fd_write, ((const BYTE*)lpBuffer) + (*lpNumberOfBytesWritten),
 			                  nNumberOfBytesToWrite - (*lpNumberOfBytesWritten));
 
 			if (nbWritten < 0)
 			{
 				CommLog_Print(WLOG_WARN,
-				              "CommWriteFile failed after %"PRIu32" bytes written, errno=[%d] %s\n",
+				              "CommWriteFile failed after %" PRIu32
+				              " bytes written, errno=[%d] %s\n",
 				              *lpNumberOfBytesWritten, errno, strerror(errno));
 
 				if (errno == EAGAIN)
@@ -539,7 +534,7 @@ BOOL CommWriteFile(HANDLE hDevice, LPCVOID lpBuffer,
 				}
 				else
 				{
-					assert(FALSE);
+					WINPR_ASSERT(FALSE);
 					SetLastError(ERROR_IO_DEVICE);
 					goto return_false;
 				}
@@ -567,6 +562,5 @@ return_false:
 	LeaveCriticalSection(&pComm->WriteLock);
 	return FALSE;
 }
-
 
 #endif /* __linux__ */

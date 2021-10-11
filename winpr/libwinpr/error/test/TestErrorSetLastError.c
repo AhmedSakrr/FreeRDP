@@ -28,8 +28,8 @@
 
 static int status = 0;
 
-LONG *pLoopCount = NULL;
-BOOL bStopTest = FALSE;
+static LONG* pLoopCount = NULL;
+static BOOL bStopTest = FALSE;
 
 static DWORD WINAPI test_error_thread(LPVOID arg)
 {
@@ -37,15 +37,17 @@ static DWORD WINAPI test_error_thread(LPVOID arg)
 	DWORD dwErrorSet;
 	DWORD dwErrorGet;
 
-	id = (int) (size_t) arg;
+	id = (int)(size_t)arg;
 
-	do {
-		dwErrorSet = (DWORD)rand();
+	do
+	{
+		dwErrorSet = (DWORD)abs(rand()) + 1;
 		SetLastError(dwErrorSet);
 		if ((dwErrorGet = GetLastError()) != dwErrorSet)
 		{
-			printf("GetLastError() failure (thread %d): Expected: 0x%08"PRIX32", Actual: 0x%08"PRIX32"\n",
-				id, dwErrorSet, dwErrorGet);
+			printf("GetLastError() failure (thread %d): Expected: 0x%08" PRIX32
+			       ", Actual: 0x%08" PRIX32 "\n",
+			       id, dwErrorSet, dwErrorGet);
 			if (!status)
 				status = -1;
 			break;
@@ -62,6 +64,9 @@ int TestErrorSetLastError(int argc, char* argv[])
 	HANDLE threads[4];
 	int i;
 
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	/* We must initialize WLog here. It will check for settings
 	 * in the environment and if the variables are not set, the last
 	 * error state is changed... */
@@ -73,8 +78,8 @@ int TestErrorSetLastError(int argc, char* argv[])
 
 	if (error != ERROR_ACCESS_DENIED)
 	{
-		printf("GetLastError() failure: Expected: 0x%08X, Actual: 0x%08"PRIX32"\n",
-				ERROR_ACCESS_DENIED, error);
+		printf("GetLastError() failure: Expected: 0x%08X, Actual: 0x%08" PRIX32 "\n",
+		       ERROR_ACCESS_DENIED, error);
 		return -1;
 	}
 
@@ -88,15 +93,15 @@ int TestErrorSetLastError(int argc, char* argv[])
 
 	for (i = 0; i < 4; i++)
 	{
-		if (!(threads[i] = CreateThread(NULL, 0, test_error_thread, (void*) (size_t) 0, 0, NULL)))
+		if (!(threads[i] = CreateThread(NULL, 0, test_error_thread, (void*)(size_t)0, 0, NULL)))
 		{
 			printf("Failed to create thread #%d\n", i);
 			return -1;
 		}
 	}
 
-	// let the threads run for at least 2 seconds
-	Sleep(2000);
+	// let the threads run for at least 0.2 seconds
+	Sleep(200);
 	bStopTest = TRUE;
 
 	WaitForSingleObject(threads[0], INFINITE);
@@ -113,8 +118,8 @@ int TestErrorSetLastError(int argc, char* argv[])
 
 	if (error != ERROR_ACCESS_DENIED)
 	{
-		printf("GetLastError() failure: Expected: 0x%08X, Actual: 0x%08"PRIX32"\n",
-				ERROR_ACCESS_DENIED, error);
+		printf("GetLastError() failure: Expected: 0x%08X, Actual: 0x%08" PRIX32 "\n",
+		       ERROR_ACCESS_DENIED, error);
 		return -1;
 	}
 
@@ -124,8 +129,7 @@ int TestErrorSetLastError(int argc, char* argv[])
 		return -1;
 	}
 
-	printf("Completed %"PRId32" iterations.\n", *pLoopCount);
+	printf("Completed %" PRId32 " iterations.\n", *pLoopCount);
 
 	return status;
 }
-

@@ -46,22 +46,24 @@
 static void wf_peer_rdpsnd_activated(RdpsndServerContext* context)
 {
 	wfInfo* wfi;
-	int i, j;
+	size_t i;
 	wfi = wf_info_get_instance();
 	wfi->agreed_format = NULL;
 	WLog_DBG(TAG, "Client supports the following %d formats:", context->num_client_formats);
 
 	for (i = 0; i < context->num_client_formats; i++)
 	{
-		//TODO: improve the way we agree on a format
+		size_t j;
+		// TODO: improve the way we agree on a format
 		for (j = 0; j < context->num_server_formats; j++)
 		{
 			if ((context->client_formats[i].wFormatTag == context->server_formats[j].wFormatTag) &&
 			    (context->client_formats[i].nChannels == context->server_formats[j].nChannels) &&
-			    (context->client_formats[i].nSamplesPerSec == context->server_formats[j].nSamplesPerSec))
+			    (context->client_formats[i].nSamplesPerSec ==
+			     context->server_formats[j].nSamplesPerSec))
 			{
 				WLog_DBG(TAG, "agreed on format!");
-				wfi->agreed_format = (AUDIO_FORMAT*) &context->server_formats[j];
+				wfi->agreed_format = (AUDIO_FORMAT*)&context->server_formats[j];
 				break;
 			}
 		}
@@ -139,7 +141,8 @@ BOOL wf_peer_rdpsnd_init(wfPeerContext* context)
 	context->rdpsnd = rdpsnd_server_context_new(context->vcm);
 	context->rdpsnd->rdpcontext = &context->_p;
 	context->rdpsnd->data = context;
-	context->rdpsnd->num_server_formats = server_rdpsnd_get_formats(&context->rdpsnd->server_formats);
+	context->rdpsnd->num_server_formats =
+	    server_rdpsnd_get_formats(&context->rdpsnd->server_formats);
 
 	if (context->rdpsnd->num_server_formats > 0)
 		context->rdpsnd->src_format = &context->rdpsnd->server_formats[0];
@@ -150,4 +153,3 @@ BOOL wf_peer_rdpsnd_init(wfPeerContext* context)
 	wfi->snd_stop = FALSE;
 	return TRUE;
 }
-

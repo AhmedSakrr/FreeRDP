@@ -51,27 +51,19 @@ const char* winpr_get_version_string(void)
 	return WINPR_VERSION_FULL;
 }
 
-const char* winpr_get_build_date(void)
-{
-	static char build_date[] = __DATE__ " " __TIME__;
-
-	return build_date;
-}
-
 const char* winpr_get_build_revision(void)
 {
-	return GIT_REVISION;
+	return WINPR_GIT_REVISION;
 }
 
 const char* winpr_get_build_config(void)
 {
 	static const char build_config[] =
-		"Build configuration: " BUILD_CONFIG "\n"
-		"Build type:          " BUILD_TYPE "\n"
-		"CFLAGS:              " CFLAGS "\n"
-		"Compiler:            " COMPILER_ID ", " COMPILER_VERSION "\n"
-		"Target architecture: " TARGET_ARCH "\n";
+	    "Build configuration: " BUILD_CONFIG "\n"
+	    "Build type:          " BUILD_TYPE "\n"
+	    "CFLAGS:              " CFLAGS "\n"
+	    "Compiler:            " COMPILER_ID ", " COMPILER_VERSION "\n"
+	    "Target architecture: " TARGET_ARCH "\n";
 
 	return build_config;
 }
-

@@ -5,6 +5,8 @@
  * Copyright 2019 Mati Shabtay <matishabtay@gmail.com>
  * Copyright 2019 Kobi Mizrachi <kmizrachi18@gmail.com>
  * Copyright 2019 Idan Freiberg <speidy@gmail.com>
+ * Copyright 2021 Armin Novak <anovak@thincast.com>
+ * Copyright 2021 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +21,23 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_SERVER_PROXY_SERVER_H
-#define FREERDP_SERVER_PROXY_SERVER_H
+#ifndef INT_FREERDP_SERVER_PROXY_SERVER_H
+#define INT_FREERDP_SERVER_PROXY_SERVER_H
 
-#include "pf_config.h"
+#include <winpr/collections.h>
+#include <freerdp/listener.h>
 
-int pf_server_start(proxyConfig* config);
+#include <freerdp/server/proxy/proxy_config.h>
+#include "proxy_modules.h"
 
-#endif /* FREERDP_SERVER_PROXY_SERVER_H */
+struct proxy_server
+{
+	proxyModule* module;
+	proxyConfig* config;
+
+	freerdp_listener* listener;
+	HANDLE stopEvent;           /* an event used to signal the main thread to stop */
+	wArrayList* peer_list;
+};
+
+#endif /* INT_FREERDP_SERVER_PROXY_SERVER_H */

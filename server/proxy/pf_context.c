@@ -1,176 +1,280 @@
 /**
-* FreeRDP: A Remote Desktop Protocol Implementation
-* FreeRDP Proxy Server
-*
-* Copyright 2019 Mati Shabtay <matishabtay@gmail.com>
-* Copyright 2019 Kobi Mizrachi <kmizrachi18@gmail.com>
-* Copyright 2019 Idan Freiberg <speidy@gmail.com>
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * FreeRDP: A Remote Desktop Protocol Implementation
+ * FreeRDP Proxy Server
+ *
+ * Copyright 2019 Mati Shabtay <matishabtay@gmail.com>
+ * Copyright 2019 Kobi Mizrachi <kmizrachi18@gmail.com>
+ * Copyright 2019 Idan Freiberg <speidy@gmail.com>
+ * Copyright 2021 Armin Novak <anovak@thincast.com>
+ * Copyright 2021 Thincast Technologies GmbH
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <winpr/crypto.h>
+#include <winpr/print.h>
+
+#include <freerdp/server/proxy/proxy_server.h>
 
 #include "pf_client.h"
-#include "pf_context.h"
-#include "pf_common.h"
+#include <freerdp/server/proxy/proxy_context.h>
 
 /* Proxy context initialization callback */
-static BOOL client_to_proxy_context_new(freerdp_peer* client,
-                                        pServerContext* context)
+static void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx);
+static BOOL client_to_proxy_context_new(freerdp_peer* client, rdpContext* ctx)
 {
-	context->vcm = WTSOpenServerA((LPSTR) client->context);
+	pServerContext* context = (pServerContext*)ctx;
+
+	WINPR_ASSERT(client);
+	WINPR_ASSERT(context);
+
+	context->dynvcReady = NULL;
+
+	context->vcm = WTSOpenServerA((LPSTR)client->context);
 
 	if (!context->vcm || context->vcm == INVALID_HANDLE_VALUE)
-		goto fail_open_server;
+		goto error;
+
+	if (!(context->dynvcReady = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		goto error;
 
 	return TRUE;
-fail_open_server:
-	context->vcm = NULL;
+
+error:
+	client_to_proxy_context_free(client, ctx);
+
 	return FALSE;
 }
 
 /* Proxy context free callback */
-static void client_to_proxy_context_free(freerdp_peer* client,
-        pServerContext* context)
+void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx)
 {
+	pServerContext* context = (pServerContext*)ctx;
+
 	WINPR_UNUSED(client);
 
-	if (context)
-		WTSCloseServer((HANDLE) context->vcm);
+	if (!context)
+		return;
+
+	if (context->vcm && (context->vcm != INVALID_HANDLE_VALUE))
+		WTSCloseServer((HANDLE)context->vcm);
+	context->vcm = NULL;
+
+	if (context->dynvcReady)
+	{
+		CloseHandle(context->dynvcReady);
+		context->dynvcReady = NULL;
+	}
 }
 
-BOOL init_p_server_context(freerdp_peer* client)
+BOOL pf_context_init_server_context(freerdp_peer* client)
 {
+	WINPR_ASSERT(client);
+
 	client->ContextSize = sizeof(pServerContext);
-	client->ContextNew = (psPeerContextNew) client_to_proxy_context_new;
-	client->ContextFree = (psPeerContextFree) client_to_proxy_context_free;
+	client->ContextNew = client_to_proxy_context_new;
+	client->ContextFree = client_to_proxy_context_free;
+
 	return freerdp_peer_context_new(client);
 }
 
-rdpContext* p_client_context_create(rdpSettings* clientSettings)
+static BOOL pf_context_revert_str_settings(rdpSettings* dst, const rdpSettings* before, size_t nr,
+                                           const size_t* ids)
+{
+	size_t x;
+	WINPR_ASSERT(dst);
+	WINPR_ASSERT(before);
+	WINPR_ASSERT(ids || (nr == 0));
+
+	for (x = 0; x < nr; x++)
+	{
+		size_t id = ids[x];
+		const char* what = freerdp_settings_get_string(before, id);
+		if (!freerdp_settings_set_string(dst, id, what))
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src)
+{
+	BOOL rc = FALSE;
+	rdpSettings* before_copy;
+	const size_t to_revert[] = { FreeRDP_ConfigPath,      FreeRDP_PrivateKeyContent,
+		                         FreeRDP_RdpKeyContent,   FreeRDP_RdpKeyFile,
+		                         FreeRDP_PrivateKeyFile,  FreeRDP_CertificateFile,
+		                         FreeRDP_CertificateName, FreeRDP_CertificateContent };
+
+	if (!dst || !src)
+		return FALSE;
+
+	before_copy = freerdp_settings_clone(dst);
+	if (!before_copy)
+		return FALSE;
+
+	if (!freerdp_settings_copy(dst, src))
+	{
+		freerdp_settings_free(before_copy);
+		return FALSE;
+	}
+
+	/* keep original ServerMode value */
+	dst->ServerMode = before_copy->ServerMode;
+
+	/* revert some values that must not be changed */
+	if (!pf_context_revert_str_settings(dst, before_copy, ARRAYSIZE(to_revert), to_revert))
+		return FALSE;
+
+	if (!dst->ServerMode)
+	{
+		/* adjust instance pointer */
+		dst->instance = before_copy->instance;
+
+		/*
+		 * RdpServerRsaKey must be set to NULL if `dst` is client's context
+		 * it must be freed before setting it to NULL to avoid a memory leak!
+		 */
+
+		if (!freerdp_settings_set_pointer_len(dst, FreeRDP_RdpServerRsaKey, NULL,
+		                                      sizeof(rdpRsaKey)))
+			goto out_fail;
+	}
+
+	/* We handle certificate management for this client ourselfes. */
+	rc = freerdp_settings_set_bool(dst, FreeRDP_ExternalCertificateManagement, TRUE);
+
+out_fail:
+	freerdp_settings_free(before_copy);
+	return rc;
+}
+
+pClientContext* pf_context_create_client_context(rdpSettings* clientSettings)
 {
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
+	pClientContext* pc;
 	rdpContext* context;
-	rdpSettings* settings;
+
+	WINPR_ASSERT(clientSettings);
+
 	RdpClientEntry(&clientEntryPoints);
 	context = freerdp_client_context_new(&clientEntryPoints);
 
 	if (!context)
 		return NULL;
 
-	settings = context->settings;
-	pf_common_copy_settings(settings, clientSettings);
-	settings->Username = _strdup(clientSettings->Username);
-	settings->Password = _strdup(clientSettings->Password);
-	settings->Domain = _strdup(clientSettings->Domain);
-	settings->SoftwareGdi = FALSE;
-	settings->RedirectClipboard = FALSE;
-	/* Client Monitor Data */
-	settings->MonitorCount = clientSettings->MonitorCount;
-	settings->SpanMonitors = clientSettings->SpanMonitors;
-	settings->UseMultimon = clientSettings->UseMultimon;
-	settings->ForceMultimon = clientSettings->ForceMultimon;
-	settings->DesktopPosX = clientSettings->DesktopPosX;
-	settings->DesktopPosY = clientSettings->DesktopPosY;
-	settings->ListMonitors = clientSettings->ListMonitors;
-	settings->NumMonitorIds = clientSettings->NumMonitorIds;
-	settings->MonitorLocalShiftX = clientSettings->MonitorLocalShiftX;
-	settings->MonitorLocalShiftY = clientSettings->MonitorLocalShiftY;
-	settings->HasMonitorAttributes = clientSettings->HasMonitorAttributes;
-	settings->MonitorCount = clientSettings->MonitorCount;
-	settings->MonitorDefArraySize = clientSettings->MonitorDefArraySize;
+	pc = (pClientContext*)context;
 
-	if (clientSettings->MonitorDefArraySize > 0)
-	{
-		settings->MonitorDefArray = (rdpMonitor*) calloc(clientSettings->MonitorDefArraySize,
-		                            sizeof(rdpMonitor));
-
-		if (!settings->MonitorDefArray)
-		{
-			goto error;
-		}
-
-		CopyMemory(settings->MonitorDefArray, clientSettings->MonitorDefArray,
-		           sizeof(rdpMonitor) * clientSettings->MonitorDefArraySize);
-	}
-	else
-		settings->MonitorDefArray = NULL;
-
-	settings->MonitorIds = (UINT32*) calloc(16, sizeof(UINT32));
-
-	if (!settings->MonitorIds)
+	if (!pf_context_copy_settings(context->settings, clientSettings))
 		goto error;
 
-	CopyMemory(settings->MonitorIds, clientSettings->MonitorIds, 16 * sizeof(UINT32));
-	return context;
+	return pc;
 error:
 	freerdp_client_context_free(context);
 	return NULL;
 }
 
-static void connection_info_free(connectionInfo* info)
+proxyData* proxy_data_new(void)
 {
-	free(info->TargetHostname);
-	free(info->ClientHostname);
-	free(info->Username);
-	free(info);
-}
+	BYTE temp[16];
+	char* hex;
+	proxyData* pdata;
 
-proxyData* proxy_data_new()
-{
-	proxyData* pdata = calloc(1, sizeof(proxyData));
-
-	if (pdata == NULL)
-	{
+	pdata = calloc(1, sizeof(proxyData));
+	if (!pdata)
 		return NULL;
-	}
 
-	pdata->info = calloc(1, sizeof(connectionInfo));
+	if (!(pdata->abort_event = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		goto error;
 
-	if (pdata->info == NULL)
-	{
-		free(pdata);
-		return NULL;
-	}
+	if (!(pdata->gfx_server_ready = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		goto error;
 
-	if (!(pdata->connectionClosed = CreateEvent(NULL, TRUE, FALSE, NULL)))
-	{
-		proxy_data_free(pdata);
-		return NULL;
-	}
+	winpr_RAND((BYTE*)&temp, 16);
+	hex = winpr_BinToHexString(temp, 16, FALSE);
+	if (!hex)
+		goto error;
+
+	CopyMemory(pdata->session_id, hex, PROXY_SESSION_ID_LENGTH);
+	pdata->session_id[PROXY_SESSION_ID_LENGTH] = '\0';
+	free(hex);
+
+	if (!(pdata->modules_info = HashTable_New(FALSE)))
+		goto error;
+
+	/* modules_info maps between plugin name to custom data */
+	if (!HashTable_SetupForStringData(pdata->modules_info, FALSE))
+		goto error;
 
 	return pdata;
+error:
+	proxy_data_free(pdata);
+	return NULL;
 }
 
-BOOL proxy_data_set_connection_info(proxyData* pdata, rdpSettings* clientSettings,
-                                    const char* target)
+/* updates circular pointers between proxyData and pClientContext instances */
+void proxy_data_set_client_context(proxyData* pdata, pClientContext* context)
 {
-	if (!(pdata->info->TargetHostname = _strdup(target)))
-		goto out_fail;
+	WINPR_ASSERT(pdata);
+	WINPR_ASSERT(context);
+	pdata->pc = context;
+	context->pdata = pdata;
+}
 
-	if (!(pdata->info->ClientHostname = _strdup(clientSettings->ClientHostname)))
-		goto out_fail;
-
-	if (!(pdata->info->Username = _strdup(clientSettings->Username)))
-		goto out_fail;
-
-	return TRUE;
-out_fail:
-	proxy_data_free(pdata);
-	return FALSE;
+/* updates circular pointers between proxyData and pServerContext instances */
+void proxy_data_set_server_context(proxyData* pdata, pServerContext* context)
+{
+	WINPR_ASSERT(pdata);
+	WINPR_ASSERT(context);
+	pdata->ps = context;
+	context->pdata = pdata;
 }
 
 void proxy_data_free(proxyData* pdata)
 {
-	connection_info_free(pdata->info);
+	if (!pdata)
+		return;
+
+	if (pdata->abort_event)
+		CloseHandle(pdata->abort_event);
+
+	if (pdata->client_thread)
+		CloseHandle(pdata->client_thread);
+
+	if (pdata->gfx_server_ready)
+		CloseHandle(pdata->gfx_server_ready);
+
+	if (pdata->modules_info)
+		HashTable_Free(pdata->modules_info);
+
+	if (pdata->pc)
+		freerdp_client_context_free(&pdata->pc->context);
+
 	free(pdata);
+}
+
+void proxy_data_abort_connect(proxyData* pdata)
+{
+	WINPR_ASSERT(pdata);
+	WINPR_ASSERT(pdata->abort_event);
+	SetEvent(pdata->abort_event);
+	if (pdata->pc)
+		freerdp_abort_connect(pdata->pc->context.instance);
+}
+
+BOOL proxy_data_shall_disconnect(proxyData* pdata)
+{
+	WINPR_ASSERT(pdata);
+	WINPR_ASSERT(pdata->abort_event);
+	return WaitForSingleObject(pdata->abort_event, 0) == WAIT_OBJECT_0;
 }

@@ -30,11 +30,21 @@
  * http://msdn.microsoft.com/en-us/library/awbftdfh.aspx
  */
 
+struct _wPubSub
+{
+	CRITICAL_SECTION lock;
+	BOOL synchronized;
+
+	size_t size;
+	size_t count;
+	wEventType* events;
+};
+
 /**
  * Properties
  */
 
-wEventType* PubSub_GetEventTypes(wPubSub* pubSub, int* count)
+wEventType* PubSub_GetEventTypes(wPubSub* pubSub, size_t* count)
 {
 	if (count)
 		*count = pubSub->count;
@@ -48,17 +58,19 @@ wEventType* PubSub_GetEventTypes(wPubSub* pubSub, int* count)
 
 void PubSub_Lock(wPubSub* pubSub)
 {
-	EnterCriticalSection(&pubSub->lock);
+	if (pubSub->synchronized)
+		EnterCriticalSection(&pubSub->lock);
 }
 
 void PubSub_Unlock(wPubSub* pubSub)
 {
-	LeaveCriticalSection(&pubSub->lock);
+	if (pubSub->synchronized)
+		LeaveCriticalSection(&pubSub->lock);
 }
 
 wEventType* PubSub_FindEventType(wPubSub* pubSub, const char* EventName)
 {
-	int index;
+	size_t index;
 	wEventType* event = NULL;
 
 	for (index = 0; index < pubSub->count; index++)
@@ -73,18 +85,18 @@ wEventType* PubSub_FindEventType(wPubSub* pubSub, const char* EventName)
 	return event;
 }
 
-void PubSub_AddEventTypes(wPubSub* pubSub, wEventType* events, int count)
+void PubSub_AddEventTypes(wPubSub* pubSub, wEventType* events, size_t count)
 {
 	if (pubSub->synchronized)
 		PubSub_Lock(pubSub);
 
 	while (pubSub->count + count >= pubSub->size)
 	{
-		int new_size;
-		wEventType *new_event;
+		size_t new_size;
+		wEventType* new_event;
 
 		new_size = pubSub->size * 2;
-		new_event = (wEventType*) realloc(pubSub->events, new_size * sizeof(wEventType));
+		new_event = (wEventType*)realloc(pubSub->events, new_size * sizeof(wEventType));
 		if (!new_event)
 			return;
 		pubSub->size = new_size;
@@ -112,15 +124,10 @@ int PubSub_Subscribe(wPubSub* pubSub, const char* EventName, pEventHandler Event
 	{
 		status = 0;
 
-		if (event->EventHandlerCount <= MAX_EVENT_HANDLERS)
-		{
-			event->EventHandlers[event->EventHandlerCount] = EventHandler;
-			event->EventHandlerCount++;
-		}
+		if (event->EventHandlerCount < MAX_EVENT_HANDLERS)
+			event->EventHandlers[event->EventHandlerCount++] = EventHandler;
 		else
-		{
 			status = -1;
-		}
 	}
 
 	if (pubSub->synchronized)
@@ -131,7 +138,7 @@ int PubSub_Subscribe(wPubSub* pubSub, const char* EventName, pEventHandler Event
 
 int PubSub_Unsubscribe(wPubSub* pubSub, const char* EventName, pEventHandler EventHandler)
 {
-	int index;
+	size_t index;
 	wEventType* event;
 	int status = -1;
 
@@ -151,7 +158,7 @@ int PubSub_Unsubscribe(wPubSub* pubSub, const char* EventName, pEventHandler Eve
 				event->EventHandlers[index] = NULL;
 				event->EventHandlerCount--;
 				MoveMemory(&event->EventHandlers[index], &event->EventHandlers[index + 1],
-				        (MAX_EVENT_HANDLERS - index - 1) * sizeof(pEventHandler));
+				           (MAX_EVENT_HANDLERS - index - 1) * sizeof(pEventHandler));
 				status = 1;
 			}
 		}
@@ -165,7 +172,7 @@ int PubSub_Unsubscribe(wPubSub* pubSub, const char* EventName, pEventHandler Eve
 
 int PubSub_OnEvent(wPubSub* pubSub, const char* EventName, void* context, wEventArgs* e)
 {
-	int index;
+	size_t index;
 	wEventType* event;
 	int status = -1;
 
@@ -200,9 +207,7 @@ int PubSub_OnEvent(wPubSub* pubSub, const char* EventName, void* context, wEvent
 
 wPubSub* PubSub_New(BOOL synchronized)
 {
-	wPubSub* pubSub = NULL;
-
-	pubSub = (wPubSub*) malloc(sizeof(wPubSub));
+	wPubSub* pubSub = (wPubSub*)calloc(1, sizeof(wPubSub));
 
 	if (!pubSub)
 		return NULL;
@@ -210,24 +215,19 @@ wPubSub* PubSub_New(BOOL synchronized)
 	pubSub->synchronized = synchronized;
 
 	if (pubSub->synchronized && !InitializeCriticalSectionAndSpinCount(&pubSub->lock, 4000))
-	{
-		free(pubSub);
-		return NULL;
-	}
+		goto fail;
 
 	pubSub->count = 0;
 	pubSub->size = 64;
 
-	pubSub->events = (wEventType*) calloc(pubSub->size, sizeof(wEventType));
+	pubSub->events = (wEventType*)calloc(pubSub->size, sizeof(wEventType));
 	if (!pubSub->events)
-	{
-		if (pubSub->synchronized)
-			DeleteCriticalSection(&pubSub->lock);
-		free(pubSub);
-		return NULL;
-	}
+		goto fail;
 
 	return pubSub;
+fail:
+	PubSub_Free(pubSub);
+	return NULL;
 }
 
 void PubSub_Free(wPubSub* pubSub)

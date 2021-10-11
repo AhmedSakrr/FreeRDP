@@ -17,7 +17,7 @@
 %global __requires_exclude ^(libfreerdp.*|libwinpr).*$
 
 Name:           freerdp-nightly
-Version:        2.0
+Version:        3.0
 Release:        0
 License:        ASL 2.0
 Summary:        Free implementation of the Remote Desktop Protocol (RDP)
@@ -82,7 +82,11 @@ BuildRequires: gstreamer1-plugins-base-devel
 BuildRequires: libjpeg-turbo-devel
 %endif 
 
-%if 0%{?fedora} >= 21 || 0%{?rhel} >= 8
+%if 0%{?fedora} >= 33
+BuildRequires: wayland-devel
+%endif
+
+%if 0%{?rhel} >= 8
 BuildRequires: libwayland-client-devel
 %endif
 
@@ -123,7 +127,7 @@ cp %{_topdir}/SOURCES/source_version freerdp-nightly-%{version}/.source_version
 %if 0%{?fedora} < 21 || 0%{?rhel} < 8
         -DWITH_WAYLAND=OFF \
 %endif
-        -DWITH_GSSAPI=ON \
+        -DWITH_GSSAPI=OFF \
         -DCHANNEL_URBDRC=ON \
         -DCHANNEL_URBDRC_CLIENT=ON \
         -DWITH_SERVER=ON \
@@ -138,7 +142,11 @@ cp %{_topdir}/SOURCES/source_version freerdp-nightly-%{version}/.source_version
 %endif
         -DCMAKE_INSTALL_LIBDIR=%{_lib}
 
+%if 0%{?fedora} > 32
+%cmake_build
+%else
 make %{?_smp_mflags}
+%endif
 
 %install
 %if %{defined suse_version}
@@ -146,8 +154,12 @@ make %{?_smp_mflags}
 %endif
 
 %if %{defined fedora} || %{defined rhel}
+%if 0%{?fedora} > 32
+%cmake_install
+%else
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
+%endif
 %endif 
 
 find %{buildroot} -name "*.a" -delete

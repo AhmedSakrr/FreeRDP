@@ -23,6 +23,10 @@
 #define FREERDP_SERVER_PROXY_PFUPDATE_H
 
 #include <freerdp/freerdp.h>
+#include <freerdp/gdi/gdi.h>
+#include <freerdp/gdi/bitmap.h>
+
+#include <freerdp/server/proxy/proxy_context.h>
 
 void pf_server_register_update_callbacks(rdpUpdate* update);
 void pf_client_register_update_callbacks(rdpUpdate* update);

@@ -18,14 +18,14 @@
 winpr_module_add(
 	address.c
 	barrier.c
-	condition.c
 	critical.c
 	event.c
 	init.c
 	mutex.c
+	pollset.c
+	pollset.h
 	semaphore.c
 	sleep.c
-	srw.c
 	synch.h
 	timer.c
 	wait.c)

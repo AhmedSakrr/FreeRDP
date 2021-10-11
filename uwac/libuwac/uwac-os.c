@@ -27,10 +27,24 @@
  * Functions have been renamed just to prevent name clashes.
  */
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#endif
+
 #define _GNU_SOURCE
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 #if defined(__FreeBSD__) || defined(__DragonFly__)
 #define USE_SHM
+#endif
+
+/* uClibc and uClibc-ng don't provide O_TMPFILE */
+#if !defined(O_TMPFILE) && !defined(__FreeBSD__)
+#define O_TMPFILE (020000000 | O_DIRECTORY)
 #endif
 
 #include <sys/types.h>
@@ -46,7 +60,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 
-#include "../config.h"
+#include "config.h"
 #include "uwac-os.h"
 #include "uwac-utils.h"
 
@@ -120,8 +134,7 @@ static ssize_t recvmsg_cloexec_fallback(int sockfd, struct msghdr* msg, int flag
 
 	for (; cmsg != NULL; cmsg = CMSG_NXTHDR(msg, cmsg))
 	{
-		if (cmsg->cmsg_level != SOL_SOCKET ||
-		    cmsg->cmsg_type != SCM_RIGHTS)
+		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
 			continue;
 
 		data = CMSG_DATA(cmsg);
@@ -226,7 +239,16 @@ int uwac_create_anonymous_file(off_t size)
 		return -1;
 	}
 
+#ifdef O_TMPFILE
 	fd = open(path, O_TMPFILE | O_RDWR | O_EXCL, 0600);
+#else
+	/*
+	 * Some platforms (e.g. FreeBSD) won't support O_TMPFILE and can't
+	 * reasonably emulate it at first blush.  Opt to make them rely on
+	 * the create_tmpfile_cloexec() path instead.
+	 */
+	fd = -1;
+#endif
 
 	if (fd < 0)
 	{

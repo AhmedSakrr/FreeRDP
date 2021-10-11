@@ -23,7 +23,7 @@
 #include "config.h"
 #endif
 
-
+#include <winpr/assert.h>
 
 #include "sfreerdp.h"
 
@@ -40,6 +40,8 @@
  */
 static UINT sf_peer_audin_opening(audin_server_context* context)
 {
+	WINPR_ASSERT(context);
+
 	WLog_DBG(TAG, "AUDIN opening.");
 	/* Simply choose the first format supported by the client. */
 	context->SelectFormat(context, 0);
@@ -54,8 +56,10 @@ static UINT sf_peer_audin_opening(audin_server_context* context)
 static UINT sf_peer_audin_open_result(audin_server_context* context, UINT32 result)
 {
 	/* TODO: Implement */
+	WINPR_ASSERT(context);
+
 	WLog_WARN(TAG, "%s not implemented", __FUNCTION__);
-	WLog_DBG(TAG, "AUDIN open result %"PRIu32".", result);
+	WLog_DBG(TAG, "AUDIN open result %" PRIu32 ".", result);
 	return CHANNEL_RC_OK;
 }
 
@@ -64,19 +68,26 @@ static UINT sf_peer_audin_open_result(audin_server_context* context, UINT32 resu
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT sf_peer_audin_receive_samples(audin_server_context* context,
-        const AUDIO_FORMAT* format, wStream* buf,
-        size_t nframes)
+static UINT sf_peer_audin_receive_samples(audin_server_context* context, const AUDIO_FORMAT* format,
+                                          wStream* buf, size_t nframes)
 {
 	/* TODO: Implement */
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(format);
+	WINPR_ASSERT(buf);
+
 	WLog_WARN(TAG, "%s not implemented", __FUNCTION__);
-	WLog_DBG(TAG, "%s receive %"PRIdz" frames.", __FUNCTION__, nframes);
+	WLog_DBG(TAG, "%s receive %" PRIdz " frames.", __FUNCTION__, nframes);
 	return CHANNEL_RC_OK;
 }
 
 void sf_peer_audin_init(testPeerContext* context)
 {
+	WINPR_ASSERT(context);
+
 	context->audin = audin_server_context_new(context->vcm);
+	WINPR_ASSERT(context->audin);
+
 	context->audin->rdpcontext = &context->_p;
 	context->audin->data = context;
 	context->audin->num_server_formats = server_audin_get_formats(&context->audin->server_formats);
@@ -87,4 +98,33 @@ void sf_peer_audin_init(testPeerContext* context)
 	context->audin->Opening = sf_peer_audin_opening;
 	context->audin->OpenResult = sf_peer_audin_open_result;
 	context->audin->ReceiveSamples = sf_peer_audin_receive_samples;
+}
+
+BOOL sf_peer_audin_start(testPeerContext* context)
+{
+	if (!context || !context->audin || !context->audin->Open)
+		return FALSE;
+
+	return context->audin->Open(context->audin);
+}
+
+BOOL sf_peer_audin_stop(testPeerContext* context)
+{
+	if (!context || !context->audin || !context->audin->Close)
+		return FALSE;
+
+	return context->audin->Close(context->audin);
+}
+
+BOOL sf_peer_audin_running(testPeerContext* context)
+{
+	if (!context || !context->audin || !context->audin->IsOpen)
+		return FALSE;
+
+	return context->audin->IsOpen(context->audin);
+}
+
+void sf_peer_audin_uninit(testPeerContext* context)
+{
+	audin_server_context_free(context->audin);
 }

@@ -22,24 +22,24 @@
 
 #include "wlog.h"
 
-#define PCAP_MAGIC_NUMBER	0xA1B2C3D4
+#define PCAP_MAGIC_NUMBER 0xA1B2C3D4
 
 struct _wPcapHeader
 {
-	UINT32 magic_number; /* magic number */
+	UINT32 magic_number;  /* magic number */
 	UINT16 version_major; /* major version number */
 	UINT16 version_minor; /* minor version number */
-	INT32 thiszone; /* GMT to local correction */
-	UINT32 sigfigs; /* accuracy of timestamps */
-	UINT32 snaplen; /* max length of captured packets, in octets */
-	UINT32 network; /* data link type */
+	INT32 thiszone;       /* GMT to local correction */
+	UINT32 sigfigs;       /* accuracy of timestamps */
+	UINT32 snaplen;       /* max length of captured packets, in octets */
+	UINT32 network;       /* data link type */
 };
 typedef struct _wPcapHeader wPcapHeader;
 
 struct _wPcapRecordHeader
 {
-	UINT32 ts_sec; /* timestamp seconds */
-	UINT32 ts_usec; /* timestamp microseconds */
+	UINT32 ts_sec;   /* timestamp seconds */
+	UINT32 ts_usec;  /* timestamp microseconds */
 	UINT32 incl_len; /* number of octets of packet saved in file */
 	UINT32 orig_len; /* actual length of packet */
 };
@@ -51,7 +51,7 @@ struct _wPcapRecord
 {
 	wPcapRecordHeader header;
 	void* data;
-	UINT32 length;
+	size_t length;
 	wPcapRecord* next;
 };
 
@@ -60,8 +60,8 @@ struct _wPcap
 	FILE* fp;
 	char* name;
 	BOOL write;
-	int file_size;
-	int record_count;
+	SSIZE_T file_size;
+	size_t record_count;
 	wPcapHeader header;
 	wPcapRecord* head;
 	wPcapRecord* tail;
@@ -114,7 +114,6 @@ struct _wTcpHeader
 };
 typedef struct _wTcpHeader wTcpHeader;
 
-BOOL WLog_PacketMessage_Write(wPcap* pcap, void* data, DWORD length, DWORD flags);
+BOOL WLog_PacketMessage_Write(wPcap* pcap, void* data, size_t length, DWORD flags);
 
 #endif /* WINPR_WLOG_PACKET_MESSAGE_PRIVATE_H */
-

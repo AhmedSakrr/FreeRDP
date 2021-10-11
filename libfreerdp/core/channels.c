@@ -49,28 +49,28 @@
 
 #define TAG FREERDP_TAG("core.channels")
 
-BOOL freerdp_channel_send(rdpRdp* rdp, UINT16 channelId, const BYTE* data, int size)
+BOOL freerdp_channel_send(rdpRdp* rdp, UINT16 channelId, const BYTE* data, size_t size)
 {
 	DWORD i;
-	int left;
-	wStream* s;
+	size_t left;
 	UINT32 flags;
-	int chunkSize;
+	size_t chunkSize;
 	rdpMcs* mcs = rdp->mcs;
-	rdpMcsChannel* channel = NULL;
+	const rdpMcsChannel* channel = NULL;
 
 	for (i = 0; i < mcs->channelCount; i++)
 	{
-		if (mcs->channels[i].ChannelId == channelId)
+		const rdpMcsChannel* cur = &mcs->channels[i];
+		if (cur->ChannelId == channelId)
 		{
-			channel = &mcs->channels[i];
+			channel = cur;
 			break;
 		}
 	}
 
 	if (!channel)
 	{
-		WLog_ERR(TAG,  "freerdp_channel_send: unknown channelId %"PRIu16"", channelId);
+		WLog_ERR(TAG, "freerdp_channel_send: unknown channelId %" PRIu16 "", channelId);
 		return FALSE;
 	}
 
@@ -79,12 +79,7 @@ BOOL freerdp_channel_send(rdpRdp* rdp, UINT16 channelId, const BYTE* data, int s
 
 	while (left > 0)
 	{
-		s = rdp_send_stream_init(rdp);
-
-		if (!s)
-			return FALSE;
-
-		if (left > (int) rdp->settings->VirtualChannelChunkSize)
+		if (left > rdp->settings->VirtualChannelChunkSize)
 		{
 			chunkSize = rdp->settings->VirtualChannelChunkSize;
 		}
@@ -94,24 +89,12 @@ BOOL freerdp_channel_send(rdpRdp* rdp, UINT16 channelId, const BYTE* data, int s
 			flags |= CHANNEL_FLAG_LAST;
 		}
 
-		if ((channel->options & CHANNEL_OPTION_SHOW_PROTOCOL))
+		if (!rdp->settings->ServerMode && (channel->options & CHANNEL_OPTION_SHOW_PROTOCOL))
 		{
 			flags |= CHANNEL_FLAG_SHOW_PROTOCOL;
 		}
 
-		Stream_Write_UINT32(s, size);
-		Stream_Write_UINT32(s, flags);
-
-		if (!Stream_EnsureCapacity(s, chunkSize))
-		{
-			Stream_Release(s);
-			return FALSE;
-		}
-
-		Stream_Write(s, data, chunkSize);
-
-		/* WLog_DBG(TAG, "%s: sending data (flags=0x%x size=%d)", __FUNCTION__, flags, size); */
-		if (!rdp_send(rdp, s, channelId))
+		if (!freerdp_channel_send_packet(rdp, channelId, size, flags, data, chunkSize))
 			return FALSE;
 
 		data += chunkSize;
@@ -122,29 +105,58 @@ BOOL freerdp_channel_send(rdpRdp* rdp, UINT16 channelId, const BYTE* data, int s
 	return TRUE;
 }
 
-BOOL freerdp_channel_process(freerdp* instance, wStream* s, UINT16 channelId)
+BOOL freerdp_channel_process(freerdp* instance, wStream* s, UINT16 channelId, size_t packetLength)
 {
+	BOOL rc = FALSE;
 	UINT32 length;
 	UINT32 flags;
-	int chunkLength;
+	size_t chunkLength;
+
+	if (packetLength < 8)
+	{
+		WLog_ERR(TAG, "Header length %" PRIdz " bytes promised, none available", packetLength);
+		return FALSE;
+	}
+	packetLength -= 8;
 
 	if (Stream_GetRemainingLength(s) < 8)
 		return FALSE;
 
+	/* [MS-RDPBCGR] 3.1.5.2.2 Processing of Virtual Channel PDU
+	 * chunked data. Length is the total size of the combined data,
+	 * chunkLength is the actual data received.
+	 * check chunkLength against packetLength, which is the TPKT header size.
+	 */
 	Stream_Read_UINT32(s, length);
 	Stream_Read_UINT32(s, flags);
 	chunkLength = Stream_GetRemainingLength(s);
-	IFCALL(instance->ReceiveChannelData, instance,
-	       channelId, Stream_Pointer(s), chunkLength, flags, length);
-	return TRUE;
+	if (packetLength != chunkLength)
+	{
+		WLog_ERR(TAG, "Header length %" PRIdz " != actual length %" PRIdz, packetLength,
+		         chunkLength);
+		return FALSE;
+	}
+	if (length < chunkLength)
+	{
+		WLog_ERR(TAG, "Expected %" PRIu32 " bytes, but have %" PRIdz, length, chunkLength);
+		return FALSE;
+	}
+	IFCALLRET(instance->ReceiveChannelData, rc, instance, channelId, Stream_Pointer(s), chunkLength,
+	          flags, length);
+	if (!rc)
+	{
+		WLog_WARN(TAG, "ReceiveChannelData returned %d", rc);
+		return FALSE;
+	}
+
+	return Stream_SafeSeek(s, chunkLength);
 }
 
-BOOL freerdp_channel_peer_process(freerdp_peer* client, wStream* s,
-                                  UINT16 channelId)
+BOOL freerdp_channel_peer_process(freerdp_peer* client, wStream* s, UINT16 channelId)
 {
 	UINT32 length;
 	UINT32 flags;
-	int chunkLength;
+	size_t chunkLength;
 
 	if (Stream_GetRemainingLength(s) < 8)
 		return FALSE;
@@ -155,6 +167,7 @@ BOOL freerdp_channel_peer_process(freerdp_peer* client, wStream* s,
 
 	if (client->VirtualChannelRead)
 	{
+		int rc;
 		UINT32 index;
 		BOOL found = FALSE;
 		HANDLE hChannel = 0;
@@ -168,7 +181,7 @@ BOOL freerdp_channel_peer_process(freerdp_peer* client, wStream* s,
 
 			if (mcsChannel->ChannelId == channelId)
 			{
-				hChannel = (HANDLE) mcsChannel->handle;
+				hChannel = (HANDLE)mcsChannel->handle;
 				found = TRUE;
 				break;
 			}
@@ -177,93 +190,117 @@ BOOL freerdp_channel_peer_process(freerdp_peer* client, wStream* s,
 		if (!found)
 			return FALSE;
 
-		client->VirtualChannelRead(client, hChannel, Stream_Pointer(s),
-		                           Stream_GetRemainingLength(s));
+		rc = client->VirtualChannelRead(client, hChannel, Stream_Pointer(s), chunkLength);
+		if (rc < 0)
+			return FALSE;
 	}
 	else if (client->ReceiveChannelData)
 	{
-		client->ReceiveChannelData(client, channelId, Stream_Pointer(s), chunkLength,
-		                           flags, length);
+		BOOL rc = client->ReceiveChannelData(client, channelId, Stream_Pointer(s), chunkLength,
+		                                     flags, length);
+		if (!rc)
+			return FALSE;
 	}
-
-	return TRUE;
+	return Stream_SafeSeek(s, chunkLength);
 }
 
-static const WtsApiFunctionTable FreeRDP_WtsApiFunctionTable =
-{
+static const WtsApiFunctionTable FreeRDP_WtsApiFunctionTable = {
 	0, /* dwVersion */
 	0, /* dwFlags */
 
-	FreeRDP_WTSStopRemoteControlSession, /* StopRemoteControlSession */
-	FreeRDP_WTSStartRemoteControlSessionW, /* StartRemoteControlSessionW */
-	FreeRDP_WTSStartRemoteControlSessionA, /* StartRemoteControlSessionA */
-	FreeRDP_WTSConnectSessionW, /* ConnectSessionW */
-	FreeRDP_WTSConnectSessionA, /* ConnectSessionA */
-	FreeRDP_WTSEnumerateServersW, /* EnumerateServersW */
-	FreeRDP_WTSEnumerateServersA, /* EnumerateServersA */
-	FreeRDP_WTSOpenServerW, /* OpenServerW */
-	FreeRDP_WTSOpenServerA, /* OpenServerA */
-	FreeRDP_WTSOpenServerExW, /* OpenServerExW */
-	FreeRDP_WTSOpenServerExA, /* OpenServerExA */
-	FreeRDP_WTSCloseServer, /* CloseServer */
-	FreeRDP_WTSEnumerateSessionsW, /* EnumerateSessionsW */
-	FreeRDP_WTSEnumerateSessionsA, /* EnumerateSessionsA */
-	FreeRDP_WTSEnumerateSessionsExW, /* EnumerateSessionsExW */
-	FreeRDP_WTSEnumerateSessionsExA, /* EnumerateSessionsExA */
-	FreeRDP_WTSEnumerateProcessesW, /* EnumerateProcessesW */
-	FreeRDP_WTSEnumerateProcessesA, /* EnumerateProcessesA */
-	FreeRDP_WTSTerminateProcess, /* TerminateProcess */
-	FreeRDP_WTSQuerySessionInformationW, /* QuerySessionInformationW */
-	FreeRDP_WTSQuerySessionInformationA, /* QuerySessionInformationA */
-	FreeRDP_WTSQueryUserConfigW, /* QueryUserConfigW */
-	FreeRDP_WTSQueryUserConfigA, /* QueryUserConfigA */
-	FreeRDP_WTSSetUserConfigW, /* SetUserConfigW */
-	FreeRDP_WTSSetUserConfigA, /* SetUserConfigA */
-	FreeRDP_WTSSendMessageW, /* SendMessageW */
-	FreeRDP_WTSSendMessageA, /* SendMessageA */
-	FreeRDP_WTSDisconnectSession, /* DisconnectSession */
-	FreeRDP_WTSLogoffSession, /* LogoffSession */
-	FreeRDP_WTSShutdownSystem, /* ShutdownSystem */
-	FreeRDP_WTSWaitSystemEvent, /* WaitSystemEvent */
-	FreeRDP_WTSVirtualChannelOpen, /* VirtualChannelOpen */
-	FreeRDP_WTSVirtualChannelOpenEx, /* VirtualChannelOpenEx */
-	FreeRDP_WTSVirtualChannelClose, /* VirtualChannelClose */
-	FreeRDP_WTSVirtualChannelRead, /* VirtualChannelRead */
-	FreeRDP_WTSVirtualChannelWrite, /* VirtualChannelWrite */
-	FreeRDP_WTSVirtualChannelPurgeInput, /* VirtualChannelPurgeInput */
-	FreeRDP_WTSVirtualChannelPurgeOutput, /* VirtualChannelPurgeOutput */
-	FreeRDP_WTSVirtualChannelQuery, /* VirtualChannelQuery */
-	FreeRDP_WTSFreeMemory, /* FreeMemory */
-	FreeRDP_WTSRegisterSessionNotification, /* RegisterSessionNotification */
-	FreeRDP_WTSUnRegisterSessionNotification, /* UnRegisterSessionNotification */
-	FreeRDP_WTSRegisterSessionNotificationEx, /* RegisterSessionNotificationEx */
+	FreeRDP_WTSStopRemoteControlSession,        /* StopRemoteControlSession */
+	FreeRDP_WTSStartRemoteControlSessionW,      /* StartRemoteControlSessionW */
+	FreeRDP_WTSStartRemoteControlSessionA,      /* StartRemoteControlSessionA */
+	FreeRDP_WTSConnectSessionW,                 /* ConnectSessionW */
+	FreeRDP_WTSConnectSessionA,                 /* ConnectSessionA */
+	FreeRDP_WTSEnumerateServersW,               /* EnumerateServersW */
+	FreeRDP_WTSEnumerateServersA,               /* EnumerateServersA */
+	FreeRDP_WTSOpenServerW,                     /* OpenServerW */
+	FreeRDP_WTSOpenServerA,                     /* OpenServerA */
+	FreeRDP_WTSOpenServerExW,                   /* OpenServerExW */
+	FreeRDP_WTSOpenServerExA,                   /* OpenServerExA */
+	FreeRDP_WTSCloseServer,                     /* CloseServer */
+	FreeRDP_WTSEnumerateSessionsW,              /* EnumerateSessionsW */
+	FreeRDP_WTSEnumerateSessionsA,              /* EnumerateSessionsA */
+	FreeRDP_WTSEnumerateSessionsExW,            /* EnumerateSessionsExW */
+	FreeRDP_WTSEnumerateSessionsExA,            /* EnumerateSessionsExA */
+	FreeRDP_WTSEnumerateProcessesW,             /* EnumerateProcessesW */
+	FreeRDP_WTSEnumerateProcessesA,             /* EnumerateProcessesA */
+	FreeRDP_WTSTerminateProcess,                /* TerminateProcess */
+	FreeRDP_WTSQuerySessionInformationW,        /* QuerySessionInformationW */
+	FreeRDP_WTSQuerySessionInformationA,        /* QuerySessionInformationA */
+	FreeRDP_WTSQueryUserConfigW,                /* QueryUserConfigW */
+	FreeRDP_WTSQueryUserConfigA,                /* QueryUserConfigA */
+	FreeRDP_WTSSetUserConfigW,                  /* SetUserConfigW */
+	FreeRDP_WTSSetUserConfigA,                  /* SetUserConfigA */
+	FreeRDP_WTSSendMessageW,                    /* SendMessageW */
+	FreeRDP_WTSSendMessageA,                    /* SendMessageA */
+	FreeRDP_WTSDisconnectSession,               /* DisconnectSession */
+	FreeRDP_WTSLogoffSession,                   /* LogoffSession */
+	FreeRDP_WTSShutdownSystem,                  /* ShutdownSystem */
+	FreeRDP_WTSWaitSystemEvent,                 /* WaitSystemEvent */
+	FreeRDP_WTSVirtualChannelOpen,              /* VirtualChannelOpen */
+	FreeRDP_WTSVirtualChannelOpenEx,            /* VirtualChannelOpenEx */
+	FreeRDP_WTSVirtualChannelClose,             /* VirtualChannelClose */
+	FreeRDP_WTSVirtualChannelRead,              /* VirtualChannelRead */
+	FreeRDP_WTSVirtualChannelWrite,             /* VirtualChannelWrite */
+	FreeRDP_WTSVirtualChannelPurgeInput,        /* VirtualChannelPurgeInput */
+	FreeRDP_WTSVirtualChannelPurgeOutput,       /* VirtualChannelPurgeOutput */
+	FreeRDP_WTSVirtualChannelQuery,             /* VirtualChannelQuery */
+	FreeRDP_WTSFreeMemory,                      /* FreeMemory */
+	FreeRDP_WTSRegisterSessionNotification,     /* RegisterSessionNotification */
+	FreeRDP_WTSUnRegisterSessionNotification,   /* UnRegisterSessionNotification */
+	FreeRDP_WTSRegisterSessionNotificationEx,   /* RegisterSessionNotificationEx */
 	FreeRDP_WTSUnRegisterSessionNotificationEx, /* UnRegisterSessionNotificationEx */
-	FreeRDP_WTSQueryUserToken, /* QueryUserToken */
-	FreeRDP_WTSFreeMemoryExW, /* FreeMemoryExW */
-	FreeRDP_WTSFreeMemoryExA, /* FreeMemoryExA */
-	FreeRDP_WTSEnumerateProcessesExW, /* EnumerateProcessesExW */
-	FreeRDP_WTSEnumerateProcessesExA, /* EnumerateProcessesExA */
-	FreeRDP_WTSEnumerateListenersW, /* EnumerateListenersW */
-	FreeRDP_WTSEnumerateListenersA, /* EnumerateListenersA */
-	FreeRDP_WTSQueryListenerConfigW, /* QueryListenerConfigW */
-	FreeRDP_WTSQueryListenerConfigA, /* QueryListenerConfigA */
-	FreeRDP_WTSCreateListenerW, /* CreateListenerW */
-	FreeRDP_WTSCreateListenerA, /* CreateListenerA */
-	FreeRDP_WTSSetListenerSecurityW, /* SetListenerSecurityW */
-	FreeRDP_WTSSetListenerSecurityA, /* SetListenerSecurityA */
-	FreeRDP_WTSGetListenerSecurityW, /* GetListenerSecurityW */
-	FreeRDP_WTSGetListenerSecurityA, /* GetListenerSecurityA */
-	FreeRDP_WTSEnableChildSessions, /* EnableChildSessions */
-	FreeRDP_WTSIsChildSessionsEnabled, /* IsChildSessionsEnabled */
-	FreeRDP_WTSGetChildSessionId, /* GetChildSessionId */
-	FreeRDP_WTSGetActiveConsoleSessionId, /* GetActiveConsoleSessionId */
+	FreeRDP_WTSQueryUserToken,                  /* QueryUserToken */
+	FreeRDP_WTSFreeMemoryExW,                   /* FreeMemoryExW */
+	FreeRDP_WTSFreeMemoryExA,                   /* FreeMemoryExA */
+	FreeRDP_WTSEnumerateProcessesExW,           /* EnumerateProcessesExW */
+	FreeRDP_WTSEnumerateProcessesExA,           /* EnumerateProcessesExA */
+	FreeRDP_WTSEnumerateListenersW,             /* EnumerateListenersW */
+	FreeRDP_WTSEnumerateListenersA,             /* EnumerateListenersA */
+	FreeRDP_WTSQueryListenerConfigW,            /* QueryListenerConfigW */
+	FreeRDP_WTSQueryListenerConfigA,            /* QueryListenerConfigA */
+	FreeRDP_WTSCreateListenerW,                 /* CreateListenerW */
+	FreeRDP_WTSCreateListenerA,                 /* CreateListenerA */
+	FreeRDP_WTSSetListenerSecurityW,            /* SetListenerSecurityW */
+	FreeRDP_WTSSetListenerSecurityA,            /* SetListenerSecurityA */
+	FreeRDP_WTSGetListenerSecurityW,            /* GetListenerSecurityW */
+	FreeRDP_WTSGetListenerSecurityA,            /* GetListenerSecurityA */
+	FreeRDP_WTSEnableChildSessions,             /* EnableChildSessions */
+	FreeRDP_WTSIsChildSessionsEnabled,          /* IsChildSessionsEnabled */
+	FreeRDP_WTSGetChildSessionId,               /* GetChildSessionId */
+	FreeRDP_WTSGetActiveConsoleSessionId,       /* GetActiveConsoleSessionId */
 	FreeRDP_WTSLogonUser,
 	FreeRDP_WTSLogoffUser,
 	FreeRDP_WTSStartRemoteControlSessionExW,
 	FreeRDP_WTSStartRemoteControlSessionExA
 };
 
-PWtsApiFunctionTable FreeRDP_InitWtsApi(void)
+const WtsApiFunctionTable* FreeRDP_InitWtsApi(void)
 {
-	return (PWtsApiFunctionTable)&FreeRDP_WtsApiFunctionTable;
+	return &FreeRDP_WtsApiFunctionTable;
+}
+
+BOOL freerdp_channel_send_packet(rdpRdp* rdp, UINT16 channelId, size_t totalSize, UINT32 flags,
+                                 const BYTE* data, size_t chunkSize)
+{
+	wStream* s = rdp_send_stream_init(rdp);
+
+	if (!s)
+		return FALSE;
+
+	Stream_Write_UINT32(s, totalSize);
+	Stream_Write_UINT32(s, flags);
+
+	if (!Stream_EnsureCapacity(s, chunkSize))
+	{
+		Stream_Release(s);
+		return FALSE;
+	}
+
+	Stream_Write(s, data, chunkSize);
+
+	/* WLog_DBG(TAG, "%s: sending data (flags=0x%x size=%d)", __FUNCTION__, flags, size); */
+	return rdp_send(rdp, s, channelId);
 }

@@ -30,8 +30,6 @@
  * Properties
  */
 
-
-
 /**
  * Methods
  */
@@ -50,7 +48,7 @@ wMessagePipe* MessagePipe_New()
 {
 	wMessagePipe* pipe = NULL;
 
-	pipe = (wMessagePipe*) malloc(sizeof(wMessagePipe));
+	pipe = (wMessagePipe*)malloc(sizeof(wMessagePipe));
 
 	if (!pipe)
 		return NULL;
@@ -60,7 +58,7 @@ wMessagePipe* MessagePipe_New()
 		goto error_in;
 
 	pipe->Out = MessageQueue_New(NULL);
-	if (!pipe->In)
+	if (!pipe->Out)
 		goto error_out;
 
 	return pipe;

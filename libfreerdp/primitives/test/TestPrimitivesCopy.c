@@ -19,15 +19,15 @@
 #include <winpr/sysinfo.h>
 #include "prim_test.h"
 
-#define COPY_TESTSIZE (256*2+16*2+15+15)
+#define COPY_TESTSIZE (256 * 2 + 16 * 2 + 15 + 15)
 
 /* ------------------------------------------------------------------------- */
 static BOOL test_copy8u_func(void)
 {
 	primitives_t* prims = primitives_get();
-	BYTE ALIGN(data[COPY_TESTSIZE + 15]);
+	BYTE ALIGN(data[COPY_TESTSIZE + 15]) = { 0 };
 	int i, soff;
-	BYTE ALIGN(dest[COPY_TESTSIZE + 15]);
+	BYTE ALIGN(dest[COPY_TESTSIZE + 15]) = { 0 };
 	winpr_RAND(data, sizeof(data));
 
 	for (soff = 0; soff < 16; ++soff)
@@ -49,10 +49,9 @@ static BOOL test_copy8u_func(void)
 				{
 					if (dest[i + doff] != data[i + soff])
 					{
-						printf("COPY8U FAIL: off=%d len=%d, dest[%d]=0x%02"PRIx8""
-						       "data[%d]=0x%02"PRIx8"\n",
-						       doff, length, i + doff, dest[i + doff],
-						       i + soff, data[i + soff]);
+						printf("COPY8U FAIL: off=%d len=%d, dest[%d]=0x%02" PRIx8 ""
+						       "data[%d]=0x%02" PRIx8 "\n",
+						       doff, length, i + doff, dest[i + doff], i + soff, data[i + soff]);
 						return FALSE;
 					}
 				}
@@ -69,16 +68,12 @@ static BOOL test_copy8u_speed(void)
 	BYTE ALIGN(src[MAX_TEST_SIZE + 4]);
 	BYTE ALIGN(dst[MAX_TEST_SIZE + 4]);
 
-	if (!speed_test("copy_8u", "aligned", g_Iterations,
-	                (speed_test_fkt)generic->copy_8u,
-	                (speed_test_fkt)optimized->copy_8u,
-	                src, dst, MAX_TEST_SIZE))
+	if (!speed_test("copy_8u", "aligned", g_Iterations, (speed_test_fkt)generic->copy_8u,
+	                (speed_test_fkt)optimized->copy_8u, src, dst, MAX_TEST_SIZE))
 		return FALSE;
 
-	if (!speed_test("copy_8u", "unaligned", g_Iterations,
-	                (speed_test_fkt)generic->copy_8u,
-	                (speed_test_fkt)optimized->copy_8u,
-	                src + 1, dst + 1, MAX_TEST_SIZE))
+	if (!speed_test("copy_8u", "unaligned", g_Iterations, (speed_test_fkt)generic->copy_8u,
+	                (speed_test_fkt)optimized->copy_8u, src + 1, dst + 1, MAX_TEST_SIZE))
 		return FALSE;
 
 	return TRUE;

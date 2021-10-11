@@ -24,7 +24,7 @@
 
 #include "../sspi.h"
 
-#define NTLM_OID            "1.3.6.1.4.1.311.2.2.10"
+#define NTLM_OID "1.3.6.1.4.1.311.2.2.10"
 
 enum _NEGOTIATE_STATE
 {
@@ -45,10 +45,14 @@ struct _NEGOTIATE_CONTEXT
 	CtxtHandle SubContext;
 
 	BOOL kerberos;
-	SecurityFunctionTableA* sspiA;
-	SecurityFunctionTableW* sspiW;
+	const SecurityFunctionTableA* sspiA;
+	const SecurityFunctionTableW* sspiW;
 };
 typedef struct _NEGOTIATE_CONTEXT NEGOTIATE_CONTEXT;
 
-#endif /* WINPR_SSPI_NEGOTIATE_PRIVATE_H */
+extern const SecPkgInfoA NEGOTIATE_SecPkgInfoA;
+extern const SecPkgInfoW NEGOTIATE_SecPkgInfoW;
+extern const SecurityFunctionTableA NEGOTIATE_SecurityFunctionTableA;
+extern const SecurityFunctionTableW NEGOTIATE_SecurityFunctionTableW;
 
+#endif /* WINPR_SSPI_NEGOTIATE_PRIVATE_H */

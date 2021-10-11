@@ -17,6 +17,13 @@
  * limitations under the License.
  */
 
+/* DEPRECATION WARNING:
+ *
+ * This channel is unmaintained and not used since windows 7.
+ * Only compile and use it if absolutely necessary, otherwise
+ * deactivate it or use the newer [MS-RDPEVOR] video redirection.
+ */
+
 #ifndef FREERDP_CHANNEL_TSMF_CLIENT_TSMF_H
 #define FREERDP_CHANNEL_TSMF_CLIENT_TSMF_H
 
@@ -26,8 +33,8 @@
 
 /* RDP_VIDEO_FRAME_EVENT.frame_pixfmt */
 /* http://www.fourcc.org/yuv.php */
-#define RDP_PIXFMT_I420		0x30323449
-#define RDP_PIXFMT_YV12		0x32315659
+#define RDP_PIXFMT_I420 0x30323449
+#define RDP_PIXFMT_YV12 0x32315659
 
 struct _TSMF_VIDEO_FRAME_EVENT
 {

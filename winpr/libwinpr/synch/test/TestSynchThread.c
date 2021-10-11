@@ -5,15 +5,20 @@
 
 static DWORD WINAPI test_thread(LPVOID arg)
 {
-	Sleep(1000);
+	WINPR_UNUSED(arg);
+	Sleep(100);
 	ExitThread(0);
 	return 0;
 }
 
-int TestSynchThread(int argc, char *argv[])
+int TestSynchThread(int argc, char* argv[])
 {
 	DWORD rc;
 	HANDLE thread;
+
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	thread = CreateThread(NULL, 0, test_thread, NULL, 0, NULL);
 
 	if (!thread)
@@ -27,7 +32,7 @@ int TestSynchThread(int argc, char *argv[])
 
 	if (WAIT_TIMEOUT != rc)
 	{
-		printf("Timed WaitForSingleObject on running thread failed with %"PRIu32"\n", rc);
+		printf("Timed WaitForSingleObject on running thread failed with %" PRIu32 "\n", rc);
 		return -3;
 	}
 
@@ -36,7 +41,7 @@ int TestSynchThread(int argc, char *argv[])
 
 	if (WAIT_OBJECT_0 != rc)
 	{
-		printf("WaitForSingleObject on thread failed with %"PRIu32"\n", rc);
+		printf("WaitForSingleObject on thread failed with %" PRIu32 "\n", rc);
 		return -2;
 	}
 
@@ -45,7 +50,7 @@ int TestSynchThread(int argc, char *argv[])
 
 	if (WAIT_OBJECT_0 != rc)
 	{
-		printf("Timed WaitForSingleObject on dead thread failed with %"PRIu32"\n", rc);
+		printf("Timed WaitForSingleObject on dead thread failed with %" PRIu32 "\n", rc);
 		return -5;
 	}
 
@@ -64,11 +69,11 @@ int TestSynchThread(int argc, char *argv[])
 	}
 
 	/* TryJoin should now fail. */
-	rc = WaitForSingleObject(thread, 50);
+	rc = WaitForSingleObject(thread, 10);
 
 	if (WAIT_TIMEOUT != rc)
 	{
-		printf("Timed WaitForSingleObject on running thread failed with %"PRIu32"\n", rc);
+		printf("Timed WaitForSingleObject on running thread failed with %" PRIu32 "\n", rc);
 		return -3;
 	}
 
@@ -77,7 +82,7 @@ int TestSynchThread(int argc, char *argv[])
 
 	if (WAIT_OBJECT_0 != rc)
 	{
-		printf("WaitForSingleObject on thread failed with %"PRIu32"\n", rc);
+		printf("WaitForSingleObject on thread failed with %" PRIu32 "\n", rc);
 		return -2;
 	}
 
@@ -86,7 +91,7 @@ int TestSynchThread(int argc, char *argv[])
 
 	if (WAIT_OBJECT_0 != rc)
 	{
-		printf("Timed WaitForSingleObject on dead thread failed with %"PRIu32"\n", rc);
+		printf("Timed WaitForSingleObject on dead thread failed with %" PRIu32 "\n", rc);
 		return -5;
 	}
 
@@ -113,4 +118,3 @@ int TestSynchThread(int argc, char *argv[])
 
 	return 0;
 }
-

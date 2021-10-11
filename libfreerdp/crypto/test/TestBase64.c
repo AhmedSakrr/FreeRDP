@@ -22,28 +22,26 @@
 struct Encode64test
 {
 	const char* input;
-	int len;
+	size_t len;
 	const char* output;
 };
 
-struct Encode64test encodeTests[] =
-{
-	{"\x00", 			1, "AA=="},
-	{"\x00\x00", 		2, "AAA="},
-	{"\x00\x00\x00", 	3, "AAAA"},
-	{"0123456",			7, "MDEyMzQ1Ng=="},
-	{"90123456",		8, "OTAxMjM0NTY="},
-	{"890123456",		9, "ODkwMTIzNDU2"},
-	{"7890123456",		10, "Nzg5MDEyMzQ1Ng=="},
+static const struct Encode64test encodeTests[] = {
+	{ "\x00", 1, "AA==" },
+	{ "\x00\x00", 2, "AAA=" },
+	{ "\x00\x00\x00", 3, "AAAA" },
+	{ "0123456", 7, "MDEyMzQ1Ng==" },
+	{ "90123456", 8, "OTAxMjM0NTY=" },
+	{ "890123456", 9, "ODkwMTIzNDU2" },
+	{ "7890123456", 10, "Nzg5MDEyMzQ1Ng==" },
 
-	{NULL, -1, NULL},  /*  /!\ last one  /!\ */
+	{ NULL, -1, NULL }, /*  /!\ last one  /!\ */
 };
-
 
 int TestBase64(int argc, char* argv[])
 {
 	int i, testNb = 0;
-	int outLen;
+	size_t outLen;
 	BYTE* decoded;
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
@@ -69,9 +67,11 @@ int TestBase64(int argc, char* argv[])
 
 	for (i = 0; encodeTests[i].input; i++)
 	{
-		crypto_base64_decode(encodeTests[i].output, strlen(encodeTests[i].output), &decoded, &outLen);
+		crypto_base64_decode(encodeTests[i].output, strlen(encodeTests[i].output), &decoded,
+		                     &outLen);
 
-		if (!decoded || (outLen != encodeTests[i].len) || memcmp(encodeTests[i].input, decoded, outLen))
+		if (!decoded || (outLen != encodeTests[i].len) ||
+		    memcmp(encodeTests[i].input, decoded, outLen))
 		{
 			fprintf(stderr, "ko, error for string %d\n", i);
 			return -1;

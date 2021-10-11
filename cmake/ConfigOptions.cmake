@@ -57,12 +57,9 @@ else()
 endif()
 
 if(WIN32 AND NOT UWP)
-	option(WITH_NATIVE_SSPI "Use native SSPI modules" ON)
 	option(WITH_WINMM "Use Windows Multimedia" ON)
 	option(WITH_WIN8 "Use Windows 8 libraries" OFF)
 endif()
-
-option(WITH_SMARTCARD_INSPECT "Enable SmartCard API Inspector" OFF)
 
 option(BUILD_TESTING "Build unit tests" OFF)
 CMAKE_DEPENDENT_OPTION(TESTS_WTSAPI_EXTRA "Build extra WTSAPI tests (interactive)" OFF "BUILD_TESTING" OFF)
@@ -71,7 +68,7 @@ CMAKE_DEPENDENT_OPTION(BUILD_COMM_TESTS "Build comm related tests (require comm 
 option(WITH_SAMPLE "Build sample code" OFF)
 
 option(WITH_CLIENT_COMMON "Build client common library" ON)
-cmake_dependent_option(WITH_CLIENT "Build client binaries" ON "WITH_CLIENT_COMMON" OFF)
+CMAKE_DEPENDENT_OPTION(WITH_CLIENT "Build client binaries" ON "WITH_CLIENT_COMMON" OFF)
 
 option(WITH_SERVER "Build server binaries" OFF)
 
@@ -79,10 +76,12 @@ option(BUILTIN_CHANNELS "Combine all channels into their respective base library
 
 option(WITH_CHANNELS "Build virtual channel plugins" ON)
 
-cmake_dependent_option(WITH_CLIENT_CHANNELS "Build virtual channel plugins" ON
+option(FREERDP_UNIFIED_BUILD "Build WinPR, uwac, RdTk and FreeRDP in one go" ON)
+
+CMAKE_DEPENDENT_OPTION(WITH_CLIENT_CHANNELS "Build virtual channel plugins" ON
 	"WITH_CLIENT_COMMON;WITH_CHANNELS" OFF)
 
-cmake_dependent_option(WITH_MACAUDIO "Enable OSX sound backend" ON "APPLE;NOT IOS" OFF)
+CMAKE_DEPENDENT_OPTION(WITH_MACAUDIO "Enable OSX sound backend" ON "APPLE;NOT IOS" OFF)
 
 if(WITH_SERVER AND WITH_CHANNELS)
 	option(WITH_SERVER_CHANNELS "Build virtual channel plugins" ON)
@@ -96,23 +95,38 @@ option(WITH_SERVER_INTERFACE "Build servers as a library with an interface" ON)
 option(WITH_DEBUG_ALL "Print all debug messages." OFF)
 
 if(WITH_DEBUG_ALL)
+    message(WARNING "WITH_DEBUG_ALL=ON, the build will be slow and might leak sensitive information, do not use with release builds!")
 	set(DEFAULT_DEBUG_OPTION "ON")
 else()
 	set(DEFAULT_DEBUG_OPTION "OFF")
 endif()
 
 option(WITH_DEBUG_CERTIFICATE "Print certificate related debug messages." ${DEFAULT_DEBUG_OPTION})
+if(WITH_DEBUG_CERTIFICATE)
+    message(WARNING "WITH_DEBUG_CERTIFICATE=ON, the build might leak sensitive information, do not use with release builds!")
+endif()
 option(WITH_DEBUG_CAPABILITIES "Print capability negotiation debug messages." ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_CHANNELS "Print channel manager debug messages." ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_CLIPRDR "Print clipboard redirection debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_RDPGFX "Print RDPGFX debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_DVC "Print dynamic virtual channel debug messages." ${DEFAULT_DEBUG_OPTION})
-option(WITH_DEBUG_TSMF "Print TSMF virtual channel debug messages." ${DEFAULT_DEBUG_OPTION})
+CMAKE_DEPENDENT_OPTION(WITH_DEBUG_TSMF "Print TSMF virtual channel debug messages." ${DEFAULT_DEBUG_OPTION} "CHANNEL_TSMF" OFF)
 option(WITH_DEBUG_KBD "Print keyboard related debug messages." ${DEFAULT_DEBUG_OPTION})
+if(WITH_DEBUG_KBD)
+    message(WARNING "WITH_DEBUG_KBD=ON, the build might leak sensitive information, do not use with release builds!")
+endif()
 option(WITH_DEBUG_LICENSE "Print license debug messages." ${DEFAULT_DEBUG_OPTION})
+if(WITH_DEBUG_LICENSE)
+    message(WARNING "WITH_DEBUG_LICENSE=ON, the build might leak sensitive information, do not use with release builds!")
+endif()
 option(WITH_DEBUG_NEGO "Print negotiation related debug messages." ${DEFAULT_DEBUG_OPTION})
+if(WITH_DEBUG_NEGO)
+    message(WARNING "WITH_DEBUG_NEGO=ON, the build might leak sensitive information, do not use with release builds!")
+endif()
 option(WITH_DEBUG_NLA "Print authentication related debug messages." ${DEFAULT_DEBUG_OPTION})
-option(WITH_DEBUG_NTLM "Print NTLM debug messages" ${DEFAULT_DEBUG_OPTION})
+if(WITH_DEBUG_NLA)
+    message(WARNING "WITH_DEBUG_NLA=ON, the build might leak sensitive information, do not use with release builds!")
+endif()
 option(WITH_DEBUG_TSG "Print Terminal Server Gateway debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_RAIL "Print RemoteApp debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_RDP "Print RDP debug messages" ${DEFAULT_DEBUG_OPTION})
@@ -124,8 +138,6 @@ option(WITH_DEBUG_SCARD "Print smartcard debug messages" ${DEFAULT_DEBUG_OPTION}
 option(WITH_DEBUG_SND "Print rdpsnd debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_SVC "Print static virtual channel debug messages." ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_TRANSPORT "Print transport debug messages." ${DEFAULT_DEBUG_OPTION})
-option(WITH_DEBUG_THREADS "Print thread debug messages, enables handle dump" ${DEFAULT_DEBUG_OPTION})
-option(WITH_DEBUG_MUTEX "Print mutex debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_TIMEZONE "Print timezone debug messages." ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_WND "Print window order debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_DEBUG_X11_CLIPRDR "Print X11 clipboard redirection debug messages" ${DEFAULT_DEBUG_OPTION})
@@ -137,12 +149,12 @@ option(WITH_DEBUG_RINGBUFFER "Enable Ringbuffer debug messages" ${DEFAULT_DEBUG_
 option(WITH_DEBUG_SYMBOLS "Pack debug symbols to installer" OFF)
 option(WITH_CCACHE "Use ccache support if available" ON)
 option(WITH_CLANG_FORMAT "Detect clang-format. run 'cmake --build . --target clangformat' to format." ON)
-option(WITH_ICU "Use ICU for unicode conversion" OFF)
 option(WITH_GSSAPI "Compile support for kerberos authentication. (EXPERIMENTAL)" OFF)
 
 option(WITH_DSP_EXPERIMENTAL "Enable experimental sound encoder/decoder formats" OFF)
 if (WITH_FFMPEG)
     option(WITH_DSP_FFMPEG "Use FFMPEG for audio encoding/decoding" OFF)
+    option(WITH_VAAPI "Use FFMPEG VAAPI" OFF)
 endif(WITH_FFMPEG)
 
 option(USE_VERSION_FROM_GIT_TAG "Extract FreeRDP version from git tag." OFF)
@@ -158,3 +170,53 @@ if (IOS)
 	include(ConfigOptionsiOS)
 endif(IOS)
 
+option(BUILD_FUZZERS "Use BUILD_FUZZERS to build fuzzing tests" OFF)
+
+if (BUILD_FUZZERS)
+    if (NOT OSS_FUZZ)
+        add_compile_flags("C;CXX" -fsanitize=fuzzer-no-link)
+    endif ()
+
+    if (OSS_FUZZ AND NOT DEFINED ENV{LIB_FUZZING_ENGINE})
+        message(SEND_ERROR
+            "OSS-Fuzz builds require the environment variable "
+            "LIB_FUZZING_ENGINE to be set. If you are seeing this "
+            "warning, it points to a deeper problem in the ossfuzz "
+            "build setup.")
+    endif ()
+
+    if (CMAKE_COMPILER_IS_GNUCC)
+        message(FATAL_ERROR
+            "\n"
+            "Fuzzing is unsupported with GCC compiler. Use Clang:\n"
+            " $ CC=clang CXX=clang++ cmake . <...> -DBUILD_FUZZERS=ON && make -j\n"
+            "\n")
+    endif ()
+
+    set(BUILD_TESTING ON)
+
+    # A special target with fuzzer and sanitizer flags.
+    add_library(fuzzer_config INTERFACE)
+
+    target_compile_options(
+        fuzzer_config
+        INTERFACE
+            $<$<NOT:$<BOOL:${OSS_FUZZ}>>:
+            -fsanitize=fuzzer
+            >
+            $<$<BOOL:${OSS_FUZZ}>:
+            ${CXX}
+            ${CXXFLAGS}
+            >
+        )
+    target_link_libraries(
+        fuzzer_config
+        INTERFACE
+            $<$<NOT:$<BOOL:${OSS_FUZZ}>>:
+            -fsanitize=fuzzer
+            >
+            $<$<BOOL:${OSS_FUZZ}>:
+            $ENV{LIB_FUZZING_ENGINE}
+            >
+    )
+endif()

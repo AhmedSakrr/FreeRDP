@@ -1,6 +1,7 @@
 #include <winpr/wtypes.h>
 #include <winpr/crt.h>
 #include <winpr/path.h>
+#include <winpr/file.h>
 #include <winpr/print.h>
 #include <winpr/image.h>
 #include <winpr/environment.h>
@@ -14,7 +15,7 @@ static void* read_image(const char* src, size_t* size)
 	int success = 0;
 	void* a = NULL;
 	INT64 src_size;
-	FILE* fsrc = fopen(src, "rb");
+	FILE* fsrc = winpr_fopen(src, "rb");
 
 	if (!fsrc)
 	{
@@ -31,7 +32,7 @@ static void* read_image(const char* src, size_t* size)
 	src_size = _ftelli64(fsrc);
 	if (src_size < 0)
 	{
-		fprintf(stderr, "Invalid file position %"PRId64"\n", src_size);
+		fprintf(stderr, "Invalid file position %" PRId64 "\n", src_size);
 		goto cleanup;
 	}
 	if (_fseeki64(fsrc, 0, SEEK_SET))
@@ -44,13 +45,13 @@ static void* read_image(const char* src, size_t* size)
 
 	if (!a)
 	{
-		fprintf(stderr, "Failed malloc %"PRId64" bytes\n", src_size);
+		fprintf(stderr, "Failed malloc %" PRId64 " bytes\n", src_size);
 		goto cleanup;
 	}
 
 	if (fread(a, sizeof(char), (size_t)src_size, fsrc) != (size_t)src_size)
 	{
-		fprintf(stderr, "Failed read %"PRId64" bytes\n", src_size);
+		fprintf(stderr, "Failed read %" PRId64 " bytes\n", src_size);
 		goto cleanup;
 	}
 
@@ -100,7 +101,8 @@ static int img_compare(wImage* image, wImage* image2, BOOL ignoreType)
 
 	if (image->bitsPerPixel != image2->bitsPerPixel)
 	{
-		fprintf(stderr, "Image bitsPerPixel mismatch %d:%d\n", image->bitsPerPixel, image2->bitsPerPixel);
+		fprintf(stderr, "Image bitsPerPixel mismatch %d:%d\n", image->bitsPerPixel,
+		        image2->bitsPerPixel);
 		goto cleanup;
 	}
 
@@ -152,9 +154,9 @@ static int create_test(const char* src, const char* dst_png, const char* dst_bmp
 	int status;
 	size_t bsize;
 	void* buffer = NULL;
-	wImage* image = NULL, *image2 = NULL, *image3 = NULL, *image4 = NULL;
+	wImage *image = NULL, *image2 = NULL, *image3 = NULL, *image4 = NULL;
 
-	if (!PathFileExistsA(src))
+	if (!winpr_PathFileExists(src))
 	{
 		fprintf(stderr, "File %s does not exist!", src);
 		return -1;
@@ -294,6 +296,9 @@ static int test_image_png_to_bmp(void)
 int TestImage(int argc, char* argv[])
 {
 	int rc = test_image_png_to_bmp();
+
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	return rc;
 }
-

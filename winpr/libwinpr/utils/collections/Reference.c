@@ -34,7 +34,7 @@
  * http://msdn.microsoft.com/en-us/library/windows/desktop/ms693431/
  */
 
-wReference* ReferenceTable_FindEntry(wReferenceTable* referenceTable, void* ptr)
+static wReference* ReferenceTable_FindEntry(wReferenceTable* referenceTable, void* ptr)
 {
 	UINT32 index = 0;
 	BOOL found = FALSE;
@@ -51,7 +51,7 @@ wReference* ReferenceTable_FindEntry(wReferenceTable* referenceTable, void* ptr)
 	return (found) ? reference : NULL;
 }
 
-wReference* ReferenceTable_GetFreeEntry(wReferenceTable* referenceTable)
+static wReference* ReferenceTable_GetFreeEntry(wReferenceTable* referenceTable)
 {
 	UINT32 index = 0;
 	BOOL found = FALSE;
@@ -71,7 +71,7 @@ wReference* ReferenceTable_GetFreeEntry(wReferenceTable* referenceTable)
 	if (!found)
 	{
 		UINT32 new_size;
-		wReference *new_ref;
+		wReference* new_ref;
 
 		if (!referenceTable->size)
 		{
@@ -81,15 +81,14 @@ wReference* ReferenceTable_GetFreeEntry(wReferenceTable* referenceTable)
 		}
 
 		new_size = referenceTable->size * 2;
-		new_ref = (wReference*) realloc(referenceTable->array,
-				sizeof(wReference) * new_size);
+		new_ref = (wReference*)realloc(referenceTable->array, sizeof(wReference) * new_size);
 		if (!new_ref)
 			return NULL;
 
 		referenceTable->size = new_size;
 		referenceTable->array = new_ref;
 		ZeroMemory(&referenceTable->array[(referenceTable->size / 2)],
-				sizeof(wReference) * (referenceTable->size / 2));
+		           sizeof(wReference) * (referenceTable->size / 2));
 
 		return ReferenceTable_GetFreeEntry(referenceTable);
 	}
@@ -157,7 +156,7 @@ wReferenceTable* ReferenceTable_New(BOOL synchronized, void* context, REFERENCE_
 {
 	wReferenceTable* referenceTable;
 
-	referenceTable = (wReferenceTable*) calloc(1, sizeof(wReferenceTable));
+	referenceTable = (wReferenceTable*)calloc(1, sizeof(wReferenceTable));
 	if (!referenceTable)
 		return NULL;
 
@@ -166,7 +165,7 @@ wReferenceTable* ReferenceTable_New(BOOL synchronized, void* context, REFERENCE_
 
 	referenceTable->size = 32;
 
-	referenceTable->array = (wReference*) calloc(referenceTable->size, sizeof(wReference));
+	referenceTable->array = (wReference*)calloc(referenceTable->size, sizeof(wReference));
 	if (!referenceTable->array)
 		goto error_array;
 

@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+include(CheckFunctionExists)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 set(${MODULE_PREFIX}_COLLECTIONS_SRCS
@@ -25,11 +27,9 @@ set(${MODULE_PREFIX}_COLLECTIONS_SRCS
 	collections/BitStream.c
 	collections/Reference.c
 	collections/ArrayList.c
-	collections/Dictionary.c
 	collections/LinkedList.c
 	collections/HashTable.c
 	collections/ListDictionary.c
-	collections/KeyValuePair.c
 	collections/CountdownEvent.c
 	collections/BufferPool.c
 	collections/ObjectPool.c
@@ -76,7 +76,6 @@ set(${MODULE_PREFIX}_WLOG_SRCS
 	wlog/Layout.h
 	wlog/Message.c
 	wlog/Message.h
-	wlog/TextMessage.c
 	wlog/DataMessage.c
 	wlog/DataMessage.h
 	wlog/ImageMessage.c
@@ -106,6 +105,7 @@ set(${MODULE_PREFIX}_SRCS
 	ntlm.c
 	image.c
 	print.c
+	stream.h
 	stream.c
 	strlst.c
 	debug.c
@@ -140,10 +140,16 @@ endif()
 
 if(UNIX)
 	winpr_library_add_private(m)
-endif()
 
-if((FREEBSD) AND (NOT KFREEBSD))
-	winpr_library_add_private(execinfo)
+	set(CMAKE_REQUIRED_INCLUDES backtrace.h)
+	check_function_exists(backtrace BACKTRACE)
+	if (NOT BACKTRACE)
+		set(CMAKE_REQUIRED_LIBRARIES execinfo)
+		check_function_exists(backtrace EXECINFO)
+		if (EXECINFO)
+			winpr_library_add_private(execinfo)
+		endif()
+	endif()
 endif()
 
 if(WIN32)

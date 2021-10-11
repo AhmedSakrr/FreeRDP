@@ -13,6 +13,9 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 	HRESULT status;
 	TCHAR Path[PATHCCH_MAX_CCH];
 
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	/**
 	 * PathCchAddBackslash returns S_OK if the function was successful,
 	 * S_FALSE if the path string already ends in a backslash,
@@ -27,7 +30,7 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathCchAddBackslash status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathCchAddBackslash status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
@@ -45,7 +48,7 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 
 	if (status != S_FALSE)
 	{
-		_tprintf(_T("PathCchAddBackslash status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathCchAddBackslash status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
@@ -61,7 +64,9 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 
 	if (SUCCEEDED(status))
 	{
-		_tprintf(_T("PathCchAddBackslash unexpectedly succeded with null buffer. Status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathCchAddBackslash unexpectedly succeded with null buffer. Status: 0x%08") _T(
+		             PRIX32) _T("\n"),
+		         status);
 		return -1;
 	}
 
@@ -73,7 +78,9 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 
 	if (SUCCEEDED(status))
 	{
-		_tprintf(_T("PathCchAddBackslash unexpectedly succeded with insufficient buffer size. Status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathCchAddBackslash unexpectedly succeded with insufficient buffer size. ")
+		         _T("Status: 0x%08") _T(PRIX32) _T("\n"),
+		         status);
 		return -1;
 	}
 
@@ -85,10 +92,9 @@ int TestPathCchAddBackslash(int argc, char* argv[])
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathCchAddBackslash failed with status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathCchAddBackslash failed with status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
 	return 0;
 }
-

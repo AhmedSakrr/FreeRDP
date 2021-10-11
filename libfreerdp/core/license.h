@@ -20,10 +20,9 @@
 #ifndef FREERDP_LIB_CORE_LICENSE_H
 #define FREERDP_LIB_CORE_LICENSE_H
 
-typedef struct rdp_license rdpLicense;
-
 #include "rdp.h"
 
+#include <freerdp/license.h>
 #include <freerdp/crypto/crypto.h>
 #include <freerdp/crypto/certificate.h>
 
@@ -33,7 +32,6 @@ typedef struct rdp_license rdpLicense;
 #include <freerdp/license.h>
 
 #include <winpr/stream.h>
-
 
 typedef struct
 {
@@ -90,14 +88,13 @@ struct rdp_license
 	LICENSE_BLOB* PlatformChallenge;
 	LICENSE_BLOB* EncryptedPremasterSecret;
 	LICENSE_BLOB* EncryptedPlatformChallenge;
-	LICENSE_BLOB *EncryptedPlatformChallengeResponse;
+	LICENSE_BLOB* EncryptedPlatformChallengeResponse;
 	LICENSE_BLOB* EncryptedHardwareId;
 	SCOPE_LIST* ScopeList;
 	UINT32 PacketHeaderLength;
 };
 
 FREERDP_LOCAL int license_recv(rdpLicense* license, wStream* s);
-
 
 FREERDP_LOCAL rdpLicense* license_new(rdpRdp* rdp);
 FREERDP_LOCAL void license_free(rdpLicense* license);
@@ -106,7 +103,10 @@ FREERDP_LOCAL void license_free(rdpLicense* license);
 #ifdef WITH_DEBUG_LICENSE
 #define DEBUG_LICENSE(...) WLog_DBG(LICENSE_TAG, __VA_ARGS__)
 #else
-#define DEBUG_LICENSE(...) do { } while (0)
+#define DEBUG_LICENSE(...) \
+	do                     \
+	{                      \
+	} while (0)
 #endif
 
 #endif /* FREERDP_LIB_CORE_LICENSE_H */

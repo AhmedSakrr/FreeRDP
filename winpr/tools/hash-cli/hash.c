@@ -24,6 +24,7 @@
 
 #include <winpr/ntlm.h>
 #include <winpr/ssl.h>
+#include <winpr/assert.h>
 
 /**
  * Define NTOWFv1(Password, User, Domain) as
@@ -46,10 +47,11 @@
  *
  */
 
-void usage_and_exit()
+static WINPR_NORETURN(void usage_and_exit(void))
 {
 	printf("winpr-hash: NTLM hashing tool\n");
-	printf("Usage: winpr-hash -u <username> -p <password> [-d <domain>] [-f <_default_,sam>] [-v <_1_,2>]\n");
+	printf("Usage: winpr-hash -u <username> -p <password> [-d <domain>] [-f <_default_,sam>] [-v "
+	       "<_1_,2>]\n");
 	exit(1);
 }
 
@@ -60,11 +62,11 @@ int main(int argc, char* argv[])
 	unsigned long version = 1;
 	BYTE NtHash[16];
 	char* User = NULL;
-	UINT32 UserLength;
+	size_t UserLength;
 	char* Domain = NULL;
-	UINT32 DomainLength;
+	size_t DomainLength;
 	char* Password = NULL;
-	UINT32 PasswordLength;
+	size_t PasswordLength;
 	errno = 0;
 
 	while (index < argc)
@@ -157,6 +159,10 @@ int main(int argc, char* argv[])
 	PasswordLength = strlen(Password);
 	DomainLength = (Domain) ? strlen(Domain) : 0;
 
+	WINPR_ASSERT(UserLength <= UINT32_MAX);
+	WINPR_ASSERT(PasswordLength <= UINT32_MAX);
+	WINPR_ASSERT(DomainLength <= UINT32_MAX);
+
 	if (version == 2)
 	{
 		if (!Domain)
@@ -165,7 +171,8 @@ int main(int argc, char* argv[])
 			usage_and_exit();
 		}
 
-		if (!NTOWFv2A(Password, PasswordLength, User, UserLength, Domain, DomainLength, NtHash))
+		if (!NTOWFv2A(Password, (UINT32)PasswordLength, User, (UINT32)UserLength, Domain,
+		              (UINT32)DomainLength, NtHash))
 		{
 			fprintf(stderr, "Hash creation failed\n");
 			return 1;
@@ -173,7 +180,7 @@ int main(int argc, char* argv[])
 	}
 	else
 	{
-		if(!NTOWFv1A(Password, PasswordLength, NtHash))
+		if (!NTOWFv1A(Password, (UINT32)PasswordLength, NtHash))
 		{
 			fprintf(stderr, "Hash creation failed\n");
 			return 1;
@@ -183,7 +190,7 @@ int main(int argc, char* argv[])
 	if (format == 0)
 	{
 		for (index = 0; index < 16; index++)
-			printf("%02"PRIx8"", NtHash[index]);
+			printf("%02" PRIx8 "", NtHash[index]);
 
 		printf("\n");
 	}
@@ -199,7 +206,7 @@ int main(int argc, char* argv[])
 		printf(":");
 
 		for (index = 0; index < 16; index++)
-			printf("%02"PRIx8"", NtHash[index]);
+			printf("%02" PRIx8 "", NtHash[index]);
 
 		printf(":::");
 		printf("\n");

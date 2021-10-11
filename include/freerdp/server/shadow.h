@@ -41,6 +41,7 @@
 #include <winpr/crt.h>
 #include <winpr/synch.h>
 #include <winpr/collections.h>
+#include <winpr/cmdline.h>
 
 typedef struct rdp_shadow_client rdpShadowClient;
 typedef struct rdp_shadow_server rdpShadowServer;
@@ -63,32 +64,29 @@ typedef int (*pfnShadowSubsystemUninit)(rdpShadowSubsystem* subsystem);
 typedef int (*pfnShadowSubsystemStart)(rdpShadowSubsystem* subsystem);
 typedef int (*pfnShadowSubsystemStop)(rdpShadowSubsystem* subsystem);
 
-typedef UINT32(*pfnShadowEnumMonitors)(MONITOR_DEF* monitors, UINT32 maxMonitors);
+typedef UINT32 (*pfnShadowEnumMonitors)(MONITOR_DEF* monitors, UINT32 maxMonitors);
 
-typedef int (*pfnShadowAuthenticate)(rdpShadowSubsystem* subsystem,
-                                     rdpShadowClient* client,
+typedef int (*pfnShadowAuthenticate)(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
                                      const char* user, const char* domain, const char* password);
-typedef BOOL (*pfnShadowClientConnect)(rdpShadowSubsystem* subsystem,
-                                       rdpShadowClient* client);
-typedef void (*pfnShadowClientDisconnect)(rdpShadowSubsystem* subsystem,
-        rdpShadowClient* client);
-typedef BOOL (*pfnShadowClientCapabilities)(rdpShadowSubsystem* subsystem,
-        rdpShadowClient* client);
+typedef BOOL (*pfnShadowClientConnect)(rdpShadowSubsystem* subsystem, rdpShadowClient* client);
+typedef void (*pfnShadowClientDisconnect)(rdpShadowSubsystem* subsystem, rdpShadowClient* client);
+typedef BOOL (*pfnShadowClientCapabilities)(rdpShadowSubsystem* subsystem, rdpShadowClient* client);
 
-typedef BOOL (*pfnShadowSynchronizeEvent)(rdpShadowSubsystem* subsystem,
-        rdpShadowClient* client, UINT32 flags);
-typedef BOOL (*pfnShadowKeyboardEvent)(rdpShadowSubsystem* subsystem,
-                                       rdpShadowClient* client, UINT16 flags, UINT16 code);
+typedef BOOL (*pfnShadowSynchronizeEvent)(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
+                                          UINT32 flags);
+typedef BOOL (*pfnShadowKeyboardEvent)(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
+                                       UINT16 flags, UINT16 code);
 typedef BOOL (*pfnShadowUnicodeKeyboardEvent)(rdpShadowSubsystem* subsystem,
-        rdpShadowClient* client, UINT16 flags, UINT16 code);
-typedef BOOL (*pfnShadowMouseEvent)(rdpShadowSubsystem* subsystem,
-                                    rdpShadowClient* client, UINT16 flags, UINT16 x, UINT16 y);
-typedef BOOL (*pfnShadowExtendedMouseEvent)(rdpShadowSubsystem* subsystem,
-        rdpShadowClient* client, UINT16 flags, UINT16 x, UINT16 y);
+                                              rdpShadowClient* client, UINT16 flags, UINT16 code);
+typedef BOOL (*pfnShadowMouseEvent)(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
+                                    UINT16 flags, UINT16 x, UINT16 y);
+typedef BOOL (*pfnShadowExtendedMouseEvent)(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
+                                            UINT16 flags, UINT16 x, UINT16 y);
 
-typedef BOOL (*pfnShadowChannelAudinServerReceiveSamples)(
-    rdpShadowSubsystem* subsystem, rdpShadowClient* client,
-    const AUDIO_FORMAT* format, wStream* buf, size_t nframes);
+typedef BOOL (*pfnShadowChannelAudinServerReceiveSamples)(rdpShadowSubsystem* subsystem,
+                                                          rdpShadowClient* client,
+                                                          const AUDIO_FORMAT* format, wStream* buf,
+                                                          size_t nframes);
 
 struct rdp_shadow_client
 {
@@ -96,10 +94,12 @@ struct rdp_shadow_client
 
 	HANDLE thread;
 	BOOL activated;
+	BOOL first_frame;
 	BOOL inLobby;
 	BOOL mayView;
 	BOOL mayInteract;
 	BOOL suppressOutput;
+	UINT16 surfaceId;
 	wMessageQueue* MsgQueue;
 	CRITICAL_SECTION lock;
 	REGION16 invalidRegion;
@@ -136,7 +136,7 @@ struct rdp_shadow_server
 	BOOL mayInteract;
 	BOOL shareSubRect;
 	BOOL authentication;
-	int selectedMonitor;
+	UINT32 selectedMonitor;
 	RECTANGLE_16 subRect;
 
 	/* Codec settings */
@@ -158,11 +158,11 @@ struct rdp_shadow_surface
 {
 	rdpShadowServer* server;
 
-	int x;
-	int y;
-	int width;
-	int height;
-	int scanline;
+	UINT16 x;
+	UINT16 y;
+	UINT32 width;
+	UINT32 height;
+	UINT32 scanline;
 	DWORD format;
 	BYTE* data;
 
@@ -188,9 +188,9 @@ struct rdp_shadow_subsystem
 {
 	RDP_SHADOW_ENTRY_POINTS ep;
 	HANDLE event;
-	int numMonitors;
-	int captureFrameRate;
-	int selectedMonitor;
+	UINT32 numMonitors;
+	UINT32 captureFrameRate;
+	UINT32 selectedMonitor;
 	MONITOR_DEF monitors[16];
 	MONITOR_DEF virtualScreen;
 
@@ -224,7 +224,7 @@ struct rdp_shadow_subsystem
 };
 
 /* Definition of message between subsystem and clients */
-#define SHADOW_MSG_IN_REFRESH_REQUEST_ID		1001
+#define SHADOW_MSG_IN_REFRESH_REQUEST_ID 1001
 
 typedef struct _SHADOW_MSG_OUT SHADOW_MSG_OUT;
 typedef void (*MSG_OUT_FREE_FN)(UINT32 id,
@@ -236,10 +236,10 @@ struct _SHADOW_MSG_OUT
 	MSG_OUT_FREE_FN Free;
 };
 
-#define SHADOW_MSG_OUT_POINTER_POSITION_UPDATE_ID		2001
-#define SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE_ID			2002
-#define SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES_ID				2003
-#define SHADOW_MSG_OUT_AUDIO_OUT_VOLUME_ID				2004
+#define SHADOW_MSG_OUT_POINTER_POSITION_UPDATE_ID 2001
+#define SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE_ID 2002
+#define SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES_ID 2003
+#define SHADOW_MSG_OUT_AUDIO_OUT_VOLUME_ID 2004
 
 struct _SHADOW_MSG_OUT_POINTER_POSITION_UPDATE
 {
@@ -247,8 +247,7 @@ struct _SHADOW_MSG_OUT_POINTER_POSITION_UPDATE
 	UINT32 xPos;
 	UINT32 yPos;
 };
-typedef struct _SHADOW_MSG_OUT_POINTER_POSITION_UPDATE
-	SHADOW_MSG_OUT_POINTER_POSITION_UPDATE;
+typedef struct _SHADOW_MSG_OUT_POINTER_POSITION_UPDATE SHADOW_MSG_OUT_POINTER_POSITION_UPDATE;
 
 struct _SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE
 {
@@ -262,19 +261,17 @@ struct _SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE
 	BYTE* xorMaskData;
 	BYTE* andMaskData;
 };
-typedef struct _SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE
-	SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE;
+typedef struct _SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE;
 
 struct _SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES
 {
 	SHADOW_MSG_OUT common;
 	AUDIO_FORMAT* audio_format;
 	void* buf;
-	int nFrames;
+	size_t nFrames;
 	UINT16 wTimestamp;
 };
-typedef struct _SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES
-	SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES;
+typedef struct _SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES;
 
 struct _SHADOW_MSG_OUT_AUDIO_OUT_VOLUME
 {
@@ -285,54 +282,54 @@ struct _SHADOW_MSG_OUT_AUDIO_OUT_VOLUME
 typedef struct _SHADOW_MSG_OUT_AUDIO_OUT_VOLUME SHADOW_MSG_OUT_AUDIO_OUT_VOLUME;
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-FREERDP_API void shadow_subsystem_set_entry_builtin(const char* name);
-FREERDP_API void shadow_subsystem_set_entry(pfnShadowSubsystemEntry pEntry);
+	FREERDP_API void shadow_subsystem_set_entry_builtin(const char* name);
+	FREERDP_API void shadow_subsystem_set_entry(pfnShadowSubsystemEntry pEntry);
 
-FREERDP_API int shadow_subsystem_pointer_convert_alpha_pointer_data(
-    BYTE* pixels, BOOL premultiplied,
-    UINT32 width, UINT32 height, SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE* pointerColor);
+	FREERDP_API int shadow_subsystem_pointer_convert_alpha_pointer_data(
+	    BYTE* pixels, BOOL premultiplied, UINT32 width, UINT32 height,
+	    SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE* pointerColor);
 
-FREERDP_API int shadow_server_parse_command_line(rdpShadowServer* server,
-        int argc, char** argv);
-FREERDP_API int shadow_server_command_line_status_print(rdpShadowServer* server,
-        int argc, char** argv, int status);
+	FREERDP_API int shadow_server_parse_command_line(rdpShadowServer* server, int argc, char** argv,
+	                                                 COMMAND_LINE_ARGUMENT_A* cargs);
+	FREERDP_API int shadow_server_command_line_status_print(rdpShadowServer* server, int argc,
+	                                                        char** argv, int status,
+	                                                        COMMAND_LINE_ARGUMENT_A* cargs);
 
-FREERDP_API int shadow_server_start(rdpShadowServer* server);
-FREERDP_API int shadow_server_stop(rdpShadowServer* server);
+	FREERDP_API int shadow_server_start(rdpShadowServer* server);
+	FREERDP_API int shadow_server_stop(rdpShadowServer* server);
 
-FREERDP_API int shadow_server_init(rdpShadowServer* server);
-FREERDP_API int shadow_server_uninit(rdpShadowServer* server);
+	FREERDP_API int shadow_server_init(rdpShadowServer* server);
+	FREERDP_API int shadow_server_uninit(rdpShadowServer* server);
 
-FREERDP_API UINT32 shadow_enum_monitors(MONITOR_DEF* monitors, UINT32 maxMonitors);
+	FREERDP_API UINT32 shadow_enum_monitors(MONITOR_DEF* monitors, UINT32 maxMonitors);
 
-FREERDP_API rdpShadowServer* shadow_server_new(void);
-FREERDP_API void shadow_server_free(rdpShadowServer* server);
+	FREERDP_API rdpShadowServer* shadow_server_new(void);
+	FREERDP_API void shadow_server_free(rdpShadowServer* server);
 
-FREERDP_API int shadow_capture_align_clip_rect(RECTANGLE_16* rect,
-        RECTANGLE_16* clip);
-FREERDP_API int shadow_capture_compare(BYTE* pData1, UINT32 nStep1, UINT32 nWidth,
-                                       UINT32 nHeight, BYTE* pData2, UINT32 nStep2, RECTANGLE_16* rect);
+	FREERDP_API int shadow_capture_align_clip_rect(RECTANGLE_16* rect, RECTANGLE_16* clip);
+	FREERDP_API int shadow_capture_compare(BYTE* pData1, UINT32 nStep1, UINT32 nWidth,
+	                                       UINT32 nHeight, BYTE* pData2, UINT32 nStep2,
+	                                       RECTANGLE_16* rect);
 
-FREERDP_API void shadow_subsystem_frame_update(rdpShadowSubsystem* subsystem);
+	FREERDP_API void shadow_subsystem_frame_update(rdpShadowSubsystem* subsystem);
 
-FREERDP_API BOOL shadow_client_post_msg(rdpShadowClient* client, void* context,
-                                        UINT32 type, SHADOW_MSG_OUT* msg, void* lParam);
-FREERDP_API int shadow_client_boardcast_msg(rdpShadowServer* server,
-        void* context, UINT32 type, SHADOW_MSG_OUT* msg, void* lParam);
-FREERDP_API int shadow_client_boardcast_quit(rdpShadowServer* server,
-        int nExitCode);
+	FREERDP_API BOOL shadow_client_post_msg(rdpShadowClient* client, void* context, UINT32 type,
+	                                        SHADOW_MSG_OUT* msg, void* lParam);
+	FREERDP_API int shadow_client_boardcast_msg(rdpShadowServer* server, void* context, UINT32 type,
+	                                            SHADOW_MSG_OUT* msg, void* lParam);
+	FREERDP_API int shadow_client_boardcast_quit(rdpShadowServer* server, int nExitCode);
 
-FREERDP_API int shadow_encoder_preferred_fps(rdpShadowEncoder* encoder);
-FREERDP_API UINT32 shadow_encoder_inflight_frames(rdpShadowEncoder* encoder);
+	FREERDP_API UINT32 shadow_encoder_preferred_fps(rdpShadowEncoder* encoder);
+	FREERDP_API UINT32 shadow_encoder_inflight_frames(rdpShadowEncoder* encoder);
 
-FREERDP_API BOOL shadow_screen_resize(rdpShadowScreen* screen);
+	FREERDP_API BOOL shadow_screen_resize(rdpShadowScreen* screen);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* FREERDP_SERVER_SHADOW_H */
-

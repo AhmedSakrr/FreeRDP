@@ -48,7 +48,7 @@ int freerdp_detect_keyboard_layout_from_xkb(DWORD* keyboardLayoutId)
 
 	/* We start by looking for _XKB_RULES_NAMES_BACKUP which appears to be used by libxklavier */
 
-    if (!(xprop = popen("xprop -root _XKB_RULES_NAMES_BACKUP", "r")))
+	if (!(xprop = popen("xprop -root _XKB_RULES_NAMES_BACKUP", "r")))
 		return 0;
 
 	/* Sample output for "Canadian Multilingual Standard"
@@ -79,6 +79,11 @@ int freerdp_detect_keyboard_layout_from_xkb(DWORD* keyboardLayoutId)
 			*end = '\0';
 
 			layout = beg;
+
+			/* if multiple languages are present we just take the first one */
+			pch = strchr(layout, ',');
+			if (pch)
+				*pch = '\0';
 
 			/* "variant" */
 			beg = strchr(end + 1, '"');
@@ -124,6 +129,11 @@ int freerdp_detect_keyboard_layout_from_xkb(DWORD* keyboardLayoutId)
 
 			layout = beg;
 
+			/* if multiple languages are present we just take the first one */
+			pch = strchr(layout, ',');
+			if (pch)
+				*pch = '\0';
+
 			/* "variant" */
 			beg = strchr(end + 1, '"');
 			beg += 1;
@@ -146,7 +156,7 @@ int freerdp_detect_keyboard_layout_from_xkb(DWORD* keyboardLayoutId)
 	return 0;
 }
 
-char* freerdp_detect_keymap_from_xkb()
+static char* freerdp_detect_keymap_from_xkb(void)
 {
 	char* pch;
 	char* beg;
@@ -186,8 +196,9 @@ char* freerdp_detect_keymap_from_xkb()
 				*end = '\0';
 
 				length = (end - beg);
-				keymap = (char*) malloc(length + 1);
-				if (keymap) {
+				keymap = (char*)malloc(length + 1);
+				if (keymap)
+				{
 					strncpy(keymap, beg, length);
 					keymap[length] = '\0';
 				}

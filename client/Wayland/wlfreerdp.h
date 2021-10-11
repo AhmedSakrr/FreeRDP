@@ -32,6 +32,16 @@ typedef struct wlf_context wlfContext;
 typedef struct wlf_clipboard wfClipboard;
 typedef struct _wlfDispContext wlfDispContext;
 
+#define MAX_CONTACTS 20
+
+typedef struct touch_contact
+{
+	int id;
+	double pos_x;
+	double pos_y;
+	BOOL emulate_mouse;
+} touchContact;
+
 struct wlf_context
 {
 	rdpContext context;
@@ -42,6 +52,8 @@ struct wlf_context
 	UwacSeat* seat;
 
 	BOOL fullscreen;
+	BOOL closed;
+	BOOL focusing;
 
 	/* Channels */
 	RdpeiClientContext* rdpei;
@@ -50,12 +62,15 @@ struct wlf_context
 	wfClipboard* clipboard;
 	wlfDispContext* disp;
 	wLog* log;
+	CRITICAL_SECTION critical;
+	wArrayList* events;
+
+	touchContact contacts[MAX_CONTACTS];
 };
 
 BOOL wlf_scale_coordinates(rdpContext* context, UINT32* px, UINT32* py, BOOL fromLocalToRDP);
-BOOL wlf_copy_image(const void* src, size_t srcStride, size_t srcWidth, size_t srcHeight,
-                    void* dst, size_t dstStride, size_t dstWidth, size_t dstHeight,
-                    const RECTANGLE_16* area, BOOL scale);
+BOOL wlf_copy_image(const void* src, size_t srcStride, size_t srcWidth, size_t srcHeight, void* dst,
+                    size_t dstStride, size_t dstWidth, size_t dstHeight, const RECTANGLE_16* area,
+                    BOOL scale);
 
 #endif /* FREERDP_CLIENT_WAYLAND_FREERDP_H */
-

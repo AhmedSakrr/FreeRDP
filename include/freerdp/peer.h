@@ -29,16 +29,16 @@
 
 #include <winpr/sspi.h>
 #include <winpr/ntlm.h>
-
+#include <winpr/winsock.h>
 
 typedef BOOL (*psPeerContextNew)(freerdp_peer* peer, rdpContext* context);
 typedef void (*psPeerContextFree)(freerdp_peer* peer, rdpContext* context);
 
 typedef BOOL (*psPeerInitialize)(freerdp_peer* peer);
 typedef BOOL (*psPeerGetFileDescriptor)(freerdp_peer* peer, void** rfds, int* rcount);
-typedef HANDLE(*psPeerGetEventHandle)(freerdp_peer* peer);
+typedef HANDLE (*psPeerGetEventHandle)(freerdp_peer* peer);
 typedef DWORD (*psPeerGetEventHandles)(freerdp_peer* peer, HANDLE* events, DWORD count);
-typedef HANDLE(*psPeerGetReceiveEventHandle)(freerdp_peer* peer);
+typedef HANDLE (*psPeerGetReceiveEventHandle)(freerdp_peer* peer);
 typedef BOOL (*psPeerCheckFileDescriptor)(freerdp_peer* peer);
 typedef BOOL (*psPeerIsWriteBlocked)(freerdp_peer* peer);
 typedef int (*psPeerDrainOutputBuffer)(freerdp_peer* peer);
@@ -48,36 +48,38 @@ typedef void (*psPeerDisconnect)(freerdp_peer* peer);
 typedef BOOL (*psPeerCapabilities)(freerdp_peer* peer);
 typedef BOOL (*psPeerPostConnect)(freerdp_peer* peer);
 typedef BOOL (*psPeerActivate)(freerdp_peer* peer);
-typedef BOOL (*psPeerLogon)(freerdp_peer* peer, SEC_WINNT_AUTH_IDENTITY* identity, BOOL automatic);
+typedef BOOL (*psPeerLogon)(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTITY* identity,
+                            BOOL automatic);
 typedef BOOL (*psPeerAdjustMonitorsLayout)(freerdp_peer* peer);
 typedef BOOL (*psPeerClientCapabilities)(freerdp_peer* peer);
 
-typedef int (*psPeerSendChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
-                                     int size);
-typedef int (*psPeerReceiveChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
-                                        int size,
-                                        int flags, int totalSize);
+typedef BOOL (*psPeerSendChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
+                                      size_t size);
+typedef BOOL (*psPeerSendChannelPacket)(freerdp_peer* client, UINT16 channelId, size_t totalSize,
+                                        UINT32 flags, const BYTE* data, size_t chunkSize);
+typedef BOOL (*psPeerReceiveChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
+                                         size_t size, UINT32 flags, size_t totalSize);
 
-typedef HANDLE(*psPeerVirtualChannelOpen)(freerdp_peer* peer, const char* name, UINT32 flags);
+typedef HANDLE (*psPeerVirtualChannelOpen)(freerdp_peer* peer, const char* name, UINT32 flags);
 typedef BOOL (*psPeerVirtualChannelClose)(freerdp_peer* peer, HANDLE hChannel);
 typedef int (*psPeerVirtualChannelRead)(freerdp_peer* peer, HANDLE hChannel, BYTE* buffer,
                                         UINT32 length);
-typedef int (*psPeerVirtualChannelWrite)(freerdp_peer* peer, HANDLE hChannel, BYTE* buffer,
-        UINT32 length);
+typedef int (*psPeerVirtualChannelWrite)(freerdp_peer* peer, HANDLE hChannel, const BYTE* buffer,
+                                         UINT32 length);
 typedef void* (*psPeerVirtualChannelGetData)(freerdp_peer* peer, HANDLE hChannel);
 typedef int (*psPeerVirtualChannelSetData)(freerdp_peer* peer, HANDLE hChannel, void* data);
 
 /** @brief the result of the license callback */
 typedef enum
 {
-	LICENSE_CB_INTERNAL_ERROR, 	/** an internal error happened in the callback */
-	LICENSE_CB_ABORT,			/** licensing process failed, abort the connection */
-	LICENSE_CB_IN_PROGRESS,		/** incoming packet has been treated, we're waiting for further packets to complete the workflow */
-	LICENSE_CB_COMPLETED		/** the licensing workflow has completed, go to next step */
+	LICENSE_CB_INTERNAL_ERROR, /** an internal error happened in the callback */
+	LICENSE_CB_ABORT,          /** licensing process failed, abort the connection */
+	LICENSE_CB_IN_PROGRESS, /** incoming packet has been treated, we're waiting for further packets
+	                           to complete the workflow */
+	LICENSE_CB_COMPLETED    /** the licensing workflow has completed, go to next step */
 } LicenseCallbackResult;
 
 typedef LicenseCallbackResult (*psPeerLicenseCallback)(freerdp_peer* peer, wStream* s);
-
 
 struct rdp_freerdp_peer
 {
@@ -86,7 +88,6 @@ struct rdp_freerdp_peer
 	int sockfd;
 	char hostname[50];
 
-	rdpInput* input;
 	rdpUpdate* update;
 	rdpSettings* settings;
 	rdpAutoDetect* autodetect;
@@ -135,17 +136,22 @@ struct rdp_freerdp_peer
 	psPeerClientCapabilities ClientCapabilities;
 	psPeerComputeNtlmHash ComputeNtlmHash;
 	psPeerLicenseCallback LicenseCallback;
+
+	psPeerSendChannelPacket SendChannelPacket;
 };
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-FREERDP_API BOOL freerdp_peer_context_new(freerdp_peer* client);
-FREERDP_API void freerdp_peer_context_free(freerdp_peer* client);
+	FREERDP_API BOOL freerdp_peer_context_new(freerdp_peer* client);
+	FREERDP_API void freerdp_peer_context_free(freerdp_peer* client);
 
-FREERDP_API freerdp_peer* freerdp_peer_new(int sockfd);
-FREERDP_API void freerdp_peer_free(freerdp_peer* client);
+	FREERDP_API freerdp_peer* freerdp_peer_new(int sockfd);
+	FREERDP_API void freerdp_peer_free(freerdp_peer* client);
+	FREERDP_API BOOL freerdp_peer_set_local_and_hostname(freerdp_peer* client,
+	                                                     const struct sockaddr_storage* peer_addr);
 
 #ifdef __cplusplus
 }

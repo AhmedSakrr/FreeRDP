@@ -18,24 +18,15 @@
 
 define_channel_client("urbdrc")
 
-set(${MODULE_PREFIX}_SRCS
-	searchman.c
-	searchman.h
-	isoch_queue.c
-	isoch_queue.h
+set(${MODULE_PREFIX}_SRCS	
 	data_transfer.c
 	data_transfer.h
 	urbdrc_main.c
 	urbdrc_main.h
-	urbdrc_types.h)
-
-include_directories(..)
+        $<TARGET_OBJECTS:urbdrc-common>
+	)
 
 add_channel_client_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} TRUE "DVCPluginEntry")
-
-
-
-#set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} libusb-devman)
 
 set(${MODULE_PREFIX}_LIBS)
 if (UDEV_FOUND AND UDEV_LIBRARIES)
@@ -47,7 +38,7 @@ set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
 target_link_libraries(${MODULE_NAME} ${PRIVATE_KEYWOARD} ${${MODULE_PREFIX}_LIBS})
 
 if (WITH_DEBUG_SYMBOLS AND MSVC AND NOT BUILTIN_CHANNELS AND BUILD_SHARED_LIBS)
-	install(FILES ${CMAKE_BINARY_DIR}/${MODULE_NAME}.pdb DESTINATION ${FREERDP_ADDIN_PATH} COMPONENT symbols)
+	install(FILES ${PROJECT_BINARY_DIR}/${MODULE_NAME}.pdb DESTINATION ${FREERDP_ADDIN_PATH} COMPONENT symbols)
 endif()
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Channels/${CHANNEL_NAME}/Client")

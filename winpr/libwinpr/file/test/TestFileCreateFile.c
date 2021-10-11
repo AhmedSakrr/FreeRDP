@@ -18,11 +18,14 @@ int TestFileCreateFile(int argc, char* argv[])
 	LPSTR name;
 	int rc = 0;
 	SYSTEMTIME systemTime;
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
 	GetSystemTime(&systemTime);
 	sprintf_s(sname, sizeof(sname),
-	          "CreateFile-%04"PRIu16"%02"PRIu16"%02"PRIu16"%02"PRIu16"%02"PRIu16"%02"PRIu16"%04"PRIu16,
-	          systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute,
-	          systemTime.wSecond, systemTime.wMilliseconds);
+	          "CreateFile-%04" PRIu16 "%02" PRIu16 "%02" PRIu16 "%02" PRIu16 "%02" PRIu16
+	          "%02" PRIu16 "%04" PRIu16,
+	          systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour,
+	          systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
 	name = GetKnownSubPath(KNOWN_PATH_TEMP, sname);
 
 	if (!name)
@@ -35,8 +38,8 @@ int TestFileCreateFile(int argc, char* argv[])
 	if (FAILED(hr))
 		rc = -1;
 
-	handle = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL,
-	                     CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+	handle = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW,
+	                     FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (!handle)
 	{
@@ -44,7 +47,7 @@ int TestFileCreateFile(int argc, char* argv[])
 		return -1;
 	}
 
-	if (!PathFileExistsA(name))
+	if (!winpr_PathFileExists(name))
 		rc = -1;
 
 	if (!WriteFile(handle, buffer, sizeof(buffer), &written, NULL))
@@ -80,10 +83,10 @@ int TestFileCreateFile(int argc, char* argv[])
 	if (!CloseHandle(handle))
 		rc = -1;
 
-	if (!DeleteFileA(name))
+	if (!winpr_DeleteFile(name))
 		rc = -1;
 
-	if (PathFileExistsA(name))
+	if (winpr_PathFileExists(name))
 		rc = -1;
 
 	free(name);

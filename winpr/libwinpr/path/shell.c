@@ -122,11 +122,12 @@ static char* GetPath_XDG_DATA_HOME(void)
 	size_t size;
 	char* home = NULL;
 	/**
-	 * There is a single base directory relative to which user-specific data files should be written.
-	 * This directory is defined by the environment variable $XDG_DATA_HOME.
+	 * There is a single base directory relative to which user-specific data files should be
+	 * written. This directory is defined by the environment variable $XDG_DATA_HOME.
 	 *
-	 * $XDG_DATA_HOME defines the base directory relative to which user specific data files should be stored.
-	 * If $XDG_DATA_HOME is either not set or empty, a default equal to $HOME/.local/share should be used.
+	 * $XDG_DATA_HOME defines the base directory relative to which user specific data files should
+	 * be stored. If $XDG_DATA_HOME is either not set or empty, a default equal to
+	 * $HOME/.local/share should be used.
 	 */
 	path = GetEnvAlloc("XDG_DATA_HOME");
 
@@ -139,7 +140,7 @@ static char* GetPath_XDG_DATA_HOME(void)
 		return NULL;
 
 	size = strlen(home) + strlen("/.local/share") + 1;
-	path = (char*) malloc(size);
+	path = (char*)malloc(size);
 
 	if (!path)
 	{
@@ -174,11 +175,12 @@ static char* GetPath_XDG_CONFIG_HOME(void)
 	size_t size;
 	char* home = NULL;
 	/**
-	 * There is a single base directory relative to which user-specific configuration files should be written.
-	 * This directory is defined by the environment variable $XDG_CONFIG_HOME.
+	 * There is a single base directory relative to which user-specific configuration files should
+	 * be written. This directory is defined by the environment variable $XDG_CONFIG_HOME.
 	 *
-	 * $XDG_CONFIG_HOME defines the base directory relative to which user specific configuration files should be stored.
-	 * If $XDG_CONFIG_HOME is either not set or empty, a default equal to $HOME/.config should be used.
+	 * $XDG_CONFIG_HOME defines the base directory relative to which user specific configuration
+	 * files should be stored. If $XDG_CONFIG_HOME is either not set or empty, a default equal to
+	 * $HOME/.config should be used.
 	 */
 	path = GetEnvAlloc("XDG_CONFIG_HOME");
 
@@ -194,7 +196,7 @@ static char* GetPath_XDG_CONFIG_HOME(void)
 		return NULL;
 
 	size = strlen(home) + strlen("/.config") + 1;
-	path = (char*) malloc(size);
+	path = (char*)malloc(size);
 
 	if (!path)
 	{
@@ -219,7 +221,7 @@ static char* GetPath_XDG_CACHE_HOME(void)
 	{
 		path = GetCombinedPath(home, "cache");
 
-		if (!PathFileExistsA(path))
+		if (!winpr_PathFileExists(path))
 			if (!CreateDirectoryA(path, NULL))
 				path = NULL;
 	}
@@ -230,11 +232,12 @@ static char* GetPath_XDG_CACHE_HOME(void)
 #else
 	size_t size;
 	/**
-	 * There is a single base directory relative to which user-specific non-essential (cached) data should be written.
-	 * This directory is defined by the environment variable $XDG_CACHE_HOME.
+	 * There is a single base directory relative to which user-specific non-essential (cached) data
+	 * should be written. This directory is defined by the environment variable $XDG_CACHE_HOME.
 	 *
-	 * $XDG_CACHE_HOME defines the base directory relative to which user specific non-essential data files should be stored.
-	 * If $XDG_CACHE_HOME is either not set or empty, a default equal to $HOME/.cache should be used.
+	 * $XDG_CACHE_HOME defines the base directory relative to which user specific non-essential data
+	 * files should be stored. If $XDG_CACHE_HOME is either not set or empty, a default equal to
+	 * $HOME/.cache should be used.
 	 */
 	path = GetEnvAlloc("XDG_CACHE_HOME");
 
@@ -247,7 +250,7 @@ static char* GetPath_XDG_CACHE_HOME(void)
 		return NULL;
 
 	size = strlen(home) + strlen("/.cache") + 1;
-	path = (char*) malloc(size);
+	path = (char*)malloc(size);
 
 	if (!path)
 	{
@@ -270,8 +273,7 @@ char* GetPath_XDG_RUNTIME_DIR(void)
 	if (!path)
 		return NULL;
 
-	if (FAILED(SHGetFolderPathA(0, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT,
-	                            path)))
+	if (FAILED(SHGetFolderPathA(0, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, path)))
 	{
 		free(path);
 		return NULL;
@@ -279,30 +281,35 @@ char* GetPath_XDG_RUNTIME_DIR(void)
 
 #else
 	/**
-	 * There is a single base directory relative to which user-specific runtime files and other file objects should be placed.
-	 * This directory is defined by the environment variable $XDG_RUNTIME_DIR.
+	 * There is a single base directory relative to which user-specific runtime files and other file
+	 * objects should be placed. This directory is defined by the environment variable
+	 * $XDG_RUNTIME_DIR.
 	 *
-	 * $XDG_RUNTIME_DIR defines the base directory relative to which user-specific non-essential runtime files and other
-	 * file objects (such as sockets, named pipes, ...) should be stored. The directory MUST be owned by the user,
-	 * and he MUST be the only one having read and write access to it. Its Unix access mode MUST be 0700.
+	 * $XDG_RUNTIME_DIR defines the base directory relative to which user-specific non-essential
+	 * runtime files and other file objects (such as sockets, named pipes, ...) should be stored.
+	 * The directory MUST be owned by the user, and he MUST be the only one having read and write
+	 * access to it. Its Unix access mode MUST be 0700.
 	 *
-	 * The lifetime of the directory MUST be bound to the user being logged in. It MUST be created when the user first
-	 * logs in and if the user fully logs out the directory MUST be removed. If the user logs in more than once he should
-	 * get pointed to the same directory, and it is mandatory that the directory continues to exist from his first login
-	 * to his last logout on the system, and not removed in between. Files in the directory MUST not survive reboot or a
+	 * The lifetime of the directory MUST be bound to the user being logged in. It MUST be created
+	 * when the user first logs in and if the user fully logs out the directory MUST be removed. If
+	 * the user logs in more than once he should get pointed to the same directory, and it is
+	 * mandatory that the directory continues to exist from his first login to his last logout on
+	 * the system, and not removed in between. Files in the directory MUST not survive reboot or a
 	 * full logout/login cycle.
 	 *
-	 * The directory MUST be on a local file system and not shared with any other system. The directory MUST by fully-featured
-	 * by the standards of the operating system. More specifically, on Unix-like operating systems AF_UNIX sockets,
-	 * symbolic links, hard links, proper permissions, file locking, sparse files, memory mapping, file change notifications,
-	 * a reliable hard link count must be supported, and no restrictions on the file name character set should be imposed.
-	 * Files in this directory MAY be subjected to periodic clean-up. To ensure that your files are not removed, they should
-	 * have their access time timestamp modified at least once every 6 hours of monotonic time or the 'sticky' bit should be
-	 * set on the file.
+	 * The directory MUST be on a local file system and not shared with any other system. The
+	 * directory MUST by fully-featured by the standards of the operating system. More specifically,
+	 * on Unix-like operating systems AF_UNIX sockets, symbolic links, hard links, proper
+	 * permissions, file locking, sparse files, memory mapping, file change notifications, a
+	 * reliable hard link count must be supported, and no restrictions on the file name character
+	 * set should be imposed. Files in this directory MAY be subjected to periodic clean-up. To
+	 * ensure that your files are not removed, they should have their access time timestamp modified
+	 * at least once every 6 hours of monotonic time or the 'sticky' bit should be set on the file.
 	 *
-	 * If $XDG_RUNTIME_DIR is not set applications should fall back to a replacement directory with similar capabilities and
-	 * print a warning message. Applications should use this directory for communication and synchronization purposes and
-	 * should not place larger files in it, since it might reside in runtime memory and cannot necessarily be swapped out to disk.
+	 * If $XDG_RUNTIME_DIR is not set applications should fall back to a replacement directory with
+	 * similar capabilities and print a warning message. Applications should use this directory for
+	 * communication and synchronization purposes and should not place larger files in it, since it
+	 * might reside in runtime memory and cannot necessarily be swapped out to disk.
 	 */
 	path = GetEnvAlloc("XDG_RUNTIME_DIR");
 #endif
@@ -374,7 +381,7 @@ char* GetEnvironmentPath(char* name)
 
 	if (nSize)
 	{
-		env = (LPSTR) malloc(nSize);
+		env = (LPSTR)malloc(nSize);
 
 		if (!env)
 			return NULL;
@@ -405,35 +412,30 @@ char* GetEnvironmentSubPath(char* name, const char* path)
 
 char* GetCombinedPath(const char* basePath, const char* subPath)
 {
-	int length;
+	size_t length;
 	HRESULT status;
 	char* path = NULL;
-	char* subPathCpy;
-	int basePathLength = 0;
-	int subPathLength = 0;
+	char* subPathCpy = NULL;
+	size_t basePathLength = 0;
+	size_t subPathLength = 0;
 
 	if (basePath)
-		basePathLength = (int) strlen(basePath);
+		basePathLength = strlen(basePath);
 
 	if (subPath)
-		subPathLength = (int) strlen(subPath);
+		subPathLength = strlen(subPath);
 
 	length = basePathLength + subPathLength + 1;
-	path = (char*) malloc(length + 1);
+	path = (char*)calloc(1, length + 1);
 
 	if (!path)
-		return NULL;
+		goto fail;
 
 	if (basePath)
 		CopyMemory(path, basePath, basePathLength);
 
-	path[basePathLength] = '\0';
-
 	if (FAILED(PathCchConvertStyleA(path, basePathLength, PATH_STYLE_NATIVE)))
-	{
-		free(path);
-		return NULL;
-	}
+		goto fail;
 
 	if (!subPath)
 		return path;
@@ -441,28 +443,22 @@ char* GetCombinedPath(const char* basePath, const char* subPath)
 	subPathCpy = _strdup(subPath);
 
 	if (!subPathCpy)
-	{
-		free(path);
-		return NULL;
-	}
+		goto fail;
 
 	if (FAILED(PathCchConvertStyleA(subPathCpy, subPathLength, PATH_STYLE_NATIVE)))
-	{
-		free(path);
-		free(subPathCpy);
-		return NULL;
-	}
+		goto fail;
 
 	status = NativePathCchAppendA(path, length + 1, subPathCpy);
-	free(subPathCpy);
-
 	if (FAILED(status))
-	{
-		free(path);
-		return NULL;
-	}
-	else
-		return path;
+		goto fail;
+
+	free(subPathCpy);
+	return path;
+
+fail:
+	free(path);
+	free(subPathCpy);
+	return NULL;
 }
 
 BOOL PathMakePathA(LPCSTR path, LPSECURITY_ATTRIBUTES lpAttributes)
@@ -499,9 +495,63 @@ BOOL PathMakePathA(LPCSTR path, LPSECURITY_ATTRIBUTES lpAttributes)
 #else
 	for (p = dup; p;)
 #endif
+	{
+		if ((p = strchr(p + 1, delim)))
+			*p = '\0';
+
+		if (mkdir(dup, 0777) != 0)
+			if (errno != EEXIST)
+			{
+				result = FALSE;
+				break;
+			}
+
+		if (p)
+			*p = delim;
+	}
+
+	free(dup);
+	return (result);
+#endif
+}
+
+BOOL PathMakePathW(LPCWSTR path, LPSECURITY_ATTRIBUTES lpAttributes)
 {
-	if ((p = strchr(p + 1, delim)))
-			* p = '\0';
+#if defined(_UWP)
+	return FALSE;
+#elif defined(_WIN32)
+	return (SHCreateDirectoryExW(NULL, path, lpAttributes) == ERROR_SUCCESS);
+#else
+	const WCHAR delim = PathGetSeparatorW(PATH_STYLE_NATIVE);
+	char* dup;
+	char* p;
+	BOOL result = TRUE;
+	/* we only operate on a non-null, absolute path */
+#if defined(__OS2__)
+
+	if (!path)
+		return FALSE;
+
+#else
+
+	if (!path || *path != delim)
+		return FALSE;
+
+#endif
+
+	if (ConvertFromUnicode(CP_UTF8, 0, path, -1, &dup, 0, NULL, NULL) <= 0)
+		return FALSE;
+
+#ifdef __OS2__
+	p = (strlen(dup) > 3) && (dup[1] == L':') && (dup[2] == delim)) ? &dup[3] : dup;
+
+	while (p)
+#else
+	for (p = dup; p;)
+#endif
+	{
+		if ((p = strchr(p + 1, delim)))
+			*p = '\0';
 
 		if (mkdir(dup, 0777) != 0)
 			if (errno != EEXIST)
@@ -521,6 +571,27 @@ BOOL PathMakePathA(LPCSTR path, LPSECURITY_ATTRIBUTES lpAttributes)
 
 #if !defined(_WIN32) || defined(_UWP)
 
+BOOL PathIsRelativeA(LPCSTR pszPath)
+{
+	if (!pszPath)
+		return FALSE;
+
+	return pszPath[0] != '/';
+}
+
+BOOL PathIsRelativeW(LPCWSTR pszPath)
+{
+	LPSTR lpFileNameA = NULL;
+	BOOL ret;
+
+	if (ConvertFromUnicode(CP_UTF8, 0, pszPath, -1, &lpFileNameA, 0, NULL, NULL) < 1)
+		return FALSE;
+
+	ret = PathIsRelativeA(lpFileNameA);
+	free(lpFileNameA);
+	return ret;
+}
+
 BOOL PathFileExistsA(LPCSTR pszPath)
 {
 	struct stat stat_info;
@@ -539,7 +610,7 @@ BOOL PathFileExistsW(LPCWSTR pszPath)
 	if (ConvertFromUnicode(CP_UTF8, 0, pszPath, -1, &lpFileNameA, 0, NULL, NULL) < 1)
 		return FALSE;
 
-	ret = PathFileExistsA(lpFileNameA);
+	ret = winpr_PathFileExists(lpFileNameA);
 	free(lpFileNameA);
 	return ret;
 }
@@ -556,7 +627,7 @@ BOOL PathIsDirectoryEmptyA(LPCSTR pszPath)
 	while ((dp = readdir(dir)) != NULL)
 	{
 		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
-			continue;    /* Skip . and .. */
+			continue; /* Skip . and .. */
 
 		empty = 0;
 		break;
@@ -565,7 +636,6 @@ BOOL PathIsDirectoryEmptyA(LPCSTR pszPath)
 	closedir(dir);
 	return empty;
 }
-
 
 BOOL PathIsDirectoryEmptyW(LPCWSTR pszPath)
 {
@@ -580,11 +650,117 @@ BOOL PathIsDirectoryEmptyW(LPCWSTR pszPath)
 	return ret;
 }
 
-
 #else
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #pragma comment(lib, "shlwapi.lib")
 #endif
 
 #endif
+
+BOOL winpr_MoveFile(LPCSTR lpExistingFileName, LPCSTR lpNewFileName)
+{
+#ifndef _WIN32
+	return MoveFileA(lpExistingFileName, lpNewFileName);
+#else
+	BOOL result = FALSE;
+	LPWSTR lpExistingFileNameW = NULL;
+	LPWSTR lpNewFileNameW = NULL;
+
+	if (!lpExistingFileName || !lpNewFileName)
+		return FALSE;
+
+	if (ConvertToUnicode(CP_UTF8, 0, lpExistingFileName, -1, &lpExistingFileNameW, 0) < 1)
+		goto cleanup;
+
+	if (ConvertToUnicode(CP_UTF8, 0, lpNewFileName, -1, &lpNewFileNameW, 0) < 1)
+		goto cleanup;
+
+	result = MoveFileW(lpExistingFileNameW, lpNewFileNameW);
+
+cleanup:
+	free(lpExistingFileNameW);
+	free(lpNewFileNameW);
+	return result;
+#endif
+}
+
+BOOL winpr_DeleteFile(const char* lpFileName)
+{
+#ifndef _WIN32
+	return DeleteFileA(lpFileName);
+#else
+	LPWSTR lpFileNameW = NULL;
+	BOOL result = FALSE;
+
+	if (lpFileName)
+	{
+		if (ConvertToUnicode(CP_UTF8, 0, lpFileName, -1, &lpFileNameW, 0) < 1)
+			goto cleanup;
+	}
+
+	result = DeleteFileW(lpFileNameW);
+
+cleanup:
+	free(lpFileNameW);
+	return result;
+#endif
+}
+
+BOOL winpr_RemoveDirectory(LPCSTR lpPathName)
+{
+#ifndef _WIN32
+	return RemoveDirectoryA(lpPathName);
+#else
+	LPWSTR lpPathNameW = NULL;
+	BOOL result = FALSE;
+
+	if (lpPathName)
+	{
+		if (ConvertToUnicode(CP_UTF8, 0, lpPathName, -1, &lpPathNameW, 0) < 1)
+			goto cleanup;
+	}
+
+	result = RemoveDirectoryW(lpPathNameW);
+
+cleanup:
+	free(lpPathNameW);
+	return result;
+#endif
+}
+
+BOOL winpr_PathFileExists(const char* pszPath)
+{
+#ifndef _WIN32
+	return PathFileExistsA(pszPath);
+#else
+	WCHAR* pszPathW = NULL;
+	BOOL result = FALSE;
+
+	if (ConvertToUnicode(CP_UTF8, 0, pszPath, -1, &pszPathW, 0) < 1)
+		return FALSE;
+
+	result = PathFileExistsW(pszPathW);
+	free(pszPathW);
+
+	return result;
+#endif
+}
+
+BOOL winpr_PathMakePath(const char* path, LPSECURITY_ATTRIBUTES lpAttributes)
+{
+#ifndef _WIN32
+	return PathMakePathA(path, lpAttributes);
+#else
+	WCHAR* pathW = NULL;
+	BOOL result = FALSE;
+
+	if (ConvertToUnicode(CP_UTF8, 0, path, -1, &pathW, 0) < 1)
+		return FALSE;
+
+	result = SHCreateDirectoryExW(NULL, pathW, lpAttributes) == ERROR_SUCCESS;
+	free(pathW);
+
+	return result;
+#endif
+}

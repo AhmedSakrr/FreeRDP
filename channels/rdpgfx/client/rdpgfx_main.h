@@ -72,21 +72,21 @@ struct _RDPGFX_PLUGIN
 	ZGFX_CONTEXT* zgfx;
 	UINT32 UnacknowledgedFrames;
 	UINT32 TotalDecodedFrames;
-	UINT32 StartDecodingTime;
+	UINT64 StartDecodingTime;
 	BOOL suspendFrameAcks;
 	BOOL sendFrameAcks;
 
 	wHashTable* SurfaceTable;
 
-	UINT16 MaxCacheSlot;
+	UINT16 MaxCacheSlots;
 	void* CacheSlots[25600];
 	rdpContext* rdpcontext;
 
 	wLog* log;
 	RDPGFX_CAPSET ConnectionCaps;
 	BOOL SendQoeAck;
+	BOOL initialized;
 };
 typedef struct _RDPGFX_PLUGIN RDPGFX_PLUGIN;
 
 #endif /* FREERDP_CHANNEL_RDPGFX_CLIENT_MAIN_H */
-

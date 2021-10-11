@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include <winpr/wtypes.h>
+#include <winpr/file.h>
 #include <winpr/crt.h>
 #include <freerdp/log.h>
 
@@ -42,7 +43,7 @@ int gettimeofday(struct timeval* tp, void* tz)
 {
 	struct _timeb timebuffer;
 	_ftime(&timebuffer);
-	tp->tv_sec = (long) timebuffer.time;
+	tp->tv_sec = (long)timebuffer.time;
 	tp->tv_usec = timebuffer.millitm * 1000;
 	return 0;
 }
@@ -51,26 +52,26 @@ int gettimeofday(struct timeval* tp, void* tz)
 #include <freerdp/types.h>
 #include <freerdp/utils/pcap.h>
 
-#define PCAP_MAGIC	0xA1B2C3D4
+#define PCAP_MAGIC 0xA1B2C3D4
 
 static BOOL pcap_read_header(rdpPcap* pcap, pcap_header* header)
 {
-	return fread((void*) header, sizeof(pcap_header), 1, pcap->fp) == 1;
+	return fread((void*)header, sizeof(pcap_header), 1, pcap->fp) == 1;
 }
 
 static BOOL pcap_write_header(rdpPcap* pcap, pcap_header* header)
 {
-	return fwrite((void*) header, sizeof(pcap_header), 1, pcap->fp) == 1;
+	return fwrite((void*)header, sizeof(pcap_header), 1, pcap->fp) == 1;
 }
 
 static BOOL pcap_read_record_header(rdpPcap* pcap, pcap_record_header* record)
 {
-	return fread((void*) record, sizeof(pcap_record_header), 1, pcap->fp) == 1;
+	return fread((void*)record, sizeof(pcap_record_header), 1, pcap->fp) == 1;
 }
 
 static BOOL pcap_write_record_header(rdpPcap* pcap, pcap_record_header* record)
 {
-	return fwrite((void*) record, sizeof(pcap_record_header), 1, pcap->fp) == 1;
+	return fwrite((void*)record, sizeof(pcap_record_header), 1, pcap->fp) == 1;
 }
 
 static BOOL pcap_read_record(rdpPcap* pcap, pcap_record* record)
@@ -95,17 +96,17 @@ static BOOL pcap_read_record(rdpPcap* pcap, pcap_record* record)
 static BOOL pcap_write_record(rdpPcap* pcap, pcap_record* record)
 {
 	return pcap_write_record_header(pcap, &record->header) &&
-			(fwrite(record->data, record->length, 1, pcap->fp) == 1);
+	       (fwrite(record->cdata, record->length, 1, pcap->fp) == 1);
 }
 
-BOOL pcap_add_record(rdpPcap* pcap, void* data, UINT32 length)
+BOOL pcap_add_record(rdpPcap* pcap, const void* data, UINT32 length)
 {
 	pcap_record* record;
 	struct timeval tp;
 
 	if (pcap->tail == NULL)
 	{
-		pcap->tail = (pcap_record*) calloc(1, sizeof(pcap_record));
+		pcap->tail = (pcap_record*)calloc(1, sizeof(pcap_record));
 		if (!pcap->tail)
 			return FALSE;
 
@@ -115,7 +116,7 @@ BOOL pcap_add_record(rdpPcap* pcap, void* data, UINT32 length)
 	}
 	else
 	{
-		record = (pcap_record*) calloc(1, sizeof(pcap_record));
+		record = (pcap_record*)calloc(1, sizeof(pcap_record));
 		if (!record)
 			return FALSE;
 
@@ -126,7 +127,7 @@ BOOL pcap_add_record(rdpPcap* pcap, void* data, UINT32 length)
 	if (pcap->record == NULL)
 		pcap->record = record;
 
-	record->data = data;
+	record->cdata = data;
 	record->length = length;
 	record->header.incl_len = length;
 	record->header.orig_len = length;
@@ -163,30 +164,24 @@ BOOL pcap_get_next_record_content(rdpPcap* pcap, pcap_record* record)
 
 BOOL pcap_get_next_record(rdpPcap* pcap, pcap_record* record)
 {
-	return pcap_has_next_record(pcap) &&
-			pcap_read_record(pcap, record);
+	return pcap_has_next_record(pcap) && pcap_read_record(pcap, record);
 }
 
-rdpPcap* pcap_open(char* name, BOOL write)
+rdpPcap* pcap_open(const char* name, BOOL write)
 {
 	rdpPcap* pcap;
 
-	FILE* pcap_fp = fopen(name, write ? "w+b" : "rb");
-
-	if (pcap_fp == NULL)
-	{
-		WLog_ERR(TAG, "opening pcap dump");
-		return NULL;
-	}
-
-	pcap = (rdpPcap*) calloc(1, sizeof(rdpPcap));
+	pcap = (rdpPcap*)calloc(1, sizeof(rdpPcap));
 	if (!pcap)
-		goto fail_close;
+		goto fail;
 
-	pcap->name = name;
+	pcap->name = _strdup(name);
 	pcap->write = write;
 	pcap->record_count = 0;
-	pcap->fp = pcap_fp;
+	pcap->fp = winpr_fopen(name, write ? "w+b" : "rb");
+
+	if (pcap->fp == NULL)
+		goto fail;
 
 	if (write)
 	{
@@ -212,9 +207,7 @@ rdpPcap* pcap_open(char* name, BOOL write)
 	return pcap;
 
 fail:
-	free(pcap);
-fail_close:
-	fclose(pcap_fp);
+	pcap_close(pcap);
 	return NULL;
 }
 
@@ -232,10 +225,14 @@ void pcap_flush(rdpPcap* pcap)
 
 void pcap_close(rdpPcap* pcap)
 {
+	if (!pcap)
+		return;
+
 	pcap_flush(pcap);
 
 	if (pcap->fp != NULL)
 		fclose(pcap->fp);
 
+	free(pcap->name);
 	free(pcap);
 }

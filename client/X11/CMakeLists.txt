@@ -29,9 +29,7 @@ set(${MODULE_PREFIX}_SRCS
 	xf_gfx.c
 	xf_gfx.h
 	xf_rail.c
-	xf_rail.h
-	xf_tsmf.c
-	xf_tsmf.h
+	xf_rail.h	
 	xf_input.c
 	xf_input.h
 	xf_event.c
@@ -58,6 +56,12 @@ set(${MODULE_PREFIX}_SRCS
 	xf_window.h
 	xf_client.c
 	xf_client.h)
+
+if (CHANNEL_TSMF_CLIENT)
+	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+	xf_tsmf.c
+	xf_tsmf.h)
+endif()
 
 if(WITH_CLIENT_INTERFACE)
 	if(CLIENT_INTERFACE_SHARED)
@@ -164,6 +168,10 @@ set(XFIXES_FEATURE_TYPE "RECOMMENDED")
 set(XFIXES_FEATURE_PURPOSE "X11 xfixes extension")
 set(XFIXES_FEATURE_DESCRIPTION "Useful additions to the X11 core protocol")
 
+set(FUSE_FEATURE_TYPE "RECOMMENDED")
+set(FUSE_FEATURE_PURPOSE "Remote to local file copy")
+set(FUSE_FEATURE_DESCRIPTION "use -DWITH_FUSE2 or -DWITH_FUSE3 to specify fuse version")
+
 find_feature(XShm ${XSHM_FEATURE_TYPE} ${XSHM_FEATURE_PURPOSE} ${XSHM_FEATURE_DESCRIPTION})
 find_feature(Xinerama ${XINERAMA_FEATURE_TYPE} ${XINERAMA_FEATURE_PURPOSE} ${XINERAMA_FEATURE_DESCRIPTION})
 find_feature(Xext ${XEXT_FEATURE_TYPE} ${XEXT_FEATURE_PURPOSE} ${XEXT_FEATURE_DESCRIPTION})
@@ -173,6 +181,7 @@ find_feature(Xi ${XI_FEATURE_TYPE} ${XI_FEATURE_PURPOSE} ${XI_FEATURE_DESCRIPTIO
 find_feature(Xrender ${XRENDER_FEATURE_TYPE} ${XRENDER_FEATURE_PURPOSE} ${XRENDER_FEATURE_DESCRIPTION})
 find_feature(XRandR ${XRANDR_FEATURE_TYPE} ${XRANDR_FEATURE_PURPOSE} ${XRANDR_FEATURE_DESCRIPTION})
 find_feature(Xfixes ${XFIXES_FEATURE_TYPE} ${XFIXES_FEATURE_PURPOSE} ${XFIXES_FEATURE_DESCRIPTION})
+find_feature(FUSE ${FUSE_FEATURE_TYPE} ${FUSE_FEATURE_PURPOSE} ${FUSE_FEATURE_DESCRIPTION} )
 
 if(WITH_XINERAMA)
 	add_definitions(-DWITH_XINERAMA)
@@ -212,8 +221,8 @@ endif()
 
 if(WITH_XRANDR)
 	add_definitions(-DWITH_XRANDR)
-	include_directories(${XRANDR_INCLUDE_DIRS})
-	set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} ${XRANDR_LIBRARIES})
+	include_directories(${XRandR_INCLUDE_DIRS})
+	set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} ${XRandR_LIBRARIES})
 endif()
 
 if(WITH_XFIXES)
@@ -222,16 +231,24 @@ if(WITH_XFIXES)
 	set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} ${XFIXES_LIBRARIES})
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/resources)
+if(WITH_FUSE)
+	add_definitions(-DWITH_FUSE)
+	add_definitions(-D_FILE_OFFSET_BITS=64)
+	add_definitions(-DFUSE_API_VERSION=${FUSE_API_VERSION})
+	include_directories(${FUSE_INCLUDE_DIR})
+	set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} ${FUSE_LIBRARIES})
+endif()
+
+include_directories(${PROJECT_SOURCE_DIR}/resources)
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-client freerdp m)
 if (NOT APPLE)
 	list(APPEND ${MODULE_PREFIX}_LIBS rt)
 endif()
-target_link_libraries(${MODULE_NAME} ${PRIVATE_KEYWORD} ${${MODULE_PREFIX}_LIBS})
+target_link_libraries(${MODULE_NAME} PRIVATE ${${MODULE_PREFIX}_LIBS})
 
 if(WITH_IPP)
-    target_link_libraries(${MODULE_NAME} ${PRIVATE_KEYWORD} ${IPP_LIBRARY_LIST})
+    target_link_libraries(${MODULE_NAME} PRIVATE ${IPP_LIBRARY_LIST})
 endif()
 
 if(WITH_CLIENT_INTERFACE)

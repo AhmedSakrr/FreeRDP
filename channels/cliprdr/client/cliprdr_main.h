@@ -38,17 +38,16 @@ struct cliprdr_plugin
 	CliprdrClientContext* context;
 
 	wLog* log;
-	HANDLE thread;
-	wStream* data_in;
 	void* InitHandle;
 	DWORD OpenHandle;
-	wMessageQueue* queue;
+	void* MsgsHandle;
 
 	BOOL capabilitiesReceived;
 	BOOL useLongFormatNames;
 	BOOL streamFileClipEnabled;
 	BOOL fileClipNoFilePaths;
 	BOOL canLockClipData;
+	BOOL hasHugeFileSupport;
 };
 typedef struct cliprdr_plugin cliprdrPlugin;
 
@@ -57,7 +56,10 @@ CliprdrClientContext* cliprdr_get_client_interface(cliprdrPlugin* cliprdr);
 #ifdef WITH_DEBUG_CLIPRDR
 #define DEBUG_CLIPRDR(...) WLog_DBG(TAG, __VA_ARGS__)
 #else
-#define DEBUG_CLIPRDR(...) do { } while (0)
+#define DEBUG_CLIPRDR(...) \
+	do                     \
+	{                      \
+	} while (0)
 #endif
 
 #endif /* FREERDP_CHANNEL_CLIPRDR_CLIENT_MAIN_H */

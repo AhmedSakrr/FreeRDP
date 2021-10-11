@@ -25,6 +25,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/crypto.h>
+#include <winpr/assert.h>
 
 #include <freerdp/log.h>
 
@@ -32,6 +33,39 @@
 #include "certificate.h"
 
 #define TAG FREERDP_TAG("core.gcc")
+
+static BOOL gcc_read_client_cluster_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length);
+static BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length);
+static BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length);
+static BOOL gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length);
+
+static BOOL gcc_write_client_core_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_write_server_core_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_write_client_security_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_write_client_network_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_write_server_network_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_write_client_cluster_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_write_client_monitor_extended_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
+static BOOL gcc_write_client_message_channel_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_server_message_channel_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_write_server_message_channel_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs,
+                                                        UINT16 blockLength);
+static BOOL gcc_write_client_multitransport_channel_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_read_server_multitransport_channel_data(wStream* s, rdpMcs* mcs);
+static BOOL gcc_write_server_multitransport_channel_data(wStream* s, const rdpMcs* mcs);
 
 static DWORD rdp_version_common(DWORD serverVersion, DWORD clientVersion)
 {
@@ -48,10 +82,11 @@ static DWORD rdp_version_common(DWORD serverVersion, DWORD clientVersion)
 		case RDP_VERSION_10_4:
 		case RDP_VERSION_10_5:
 		case RDP_VERSION_10_6:
+		case RDP_VERSION_10_7:
 			return version;
 
 		default:
-			WLog_ERR(TAG, "Invalid client [%"PRId32"] and server [%"PRId32"] versions",
+			WLog_ERR(TAG, "Invalid client [%" PRId32 "] and server [%" PRId32 "] versions",
 			         serverVersion, clientVersion);
 			return version;
 	}
@@ -156,10 +191,10 @@ static DWORD rdp_version_common(DWORD serverVersion, DWORD clientVersion)
  * { itu-t(0) recommendation(0) t(20) t124(124) version(0) 1 }
  * v.1 of ITU-T Recommendation T.124 (Feb 1998): "Generic Conference Control"
  */
-BYTE t124_02_98_oid[6] = { 0, 0, 20, 124, 0, 1 };
+static const BYTE t124_02_98_oid[6] = { 0, 0, 20, 124, 0, 1 };
 
-BYTE h221_cs_key[4] = "Duca";
-BYTE h221_sc_key[4] = "McDn";
+static const BYTE h221_cs_key[4] = "Duca";
+static const BYTE h221_sc_key[4] = "McDn";
 
 /**
  * Read a GCC Conference Create Request.\n
@@ -201,12 +236,11 @@ BOOL gcc_read_conference_create_request(wStream* s, rdpMcs* mcs)
 		return FALSE;
 
 	/* UserData (SET OF SEQUENCE) */
-	if (!per_read_number_of_sets(s, &number)
-	    || number != 1) /* one set of UserData */
+	if (!per_read_number_of_sets(s, &number) || number != 1) /* one set of UserData */
 		return FALSE;
 
-	if (!per_read_choice(s, &choice)
-	    || choice != 0xC0) /* UserData::value present + select h221NonStandard (1) */
+	if (!per_read_choice(s, &choice) ||
+	    choice != 0xC0) /* UserData::value present + select h221NonStandard (1) */
 		return FALSE;
 
 	/* h221NonStandard */
@@ -234,33 +268,39 @@ BOOL gcc_read_conference_create_request(wStream* s, rdpMcs* mcs)
  * @param user_data client data blocks
  */
 
-void gcc_write_conference_create_request(wStream* s, wStream* userData)
+BOOL gcc_write_conference_create_request(wStream* s, wStream* userData)
 {
 	/* ConnectData */
-	per_write_choice(s,
-	                 0); /* From Key select object (0) of type OBJECT_IDENTIFIER */
-	per_write_object_identifier(s,
-	                            t124_02_98_oid); /* ITU-T T.124 (02/98) OBJECT_IDENTIFIER */
+	if (!per_write_choice(s, 0)) /* From Key select object (0) of type OBJECT_IDENTIFIER */
+		return FALSE;
+	if (!per_write_object_identifier(s, t124_02_98_oid)) /* ITU-T T.124 (02/98) OBJECT_IDENTIFIER */
+		return FALSE;
 	/* ConnectData::connectPDU (OCTET_STRING) */
-	per_write_length(s, Stream_GetPosition(userData) + 14); /* connectPDU length */
+	if (!per_write_length(s, Stream_GetPosition(userData) + 14)) /* connectPDU length */
+		return FALSE;
 	/* ConnectGCCPDU */
-	per_write_choice(s,
-	                 0); /* From ConnectGCCPDU select conferenceCreateRequest (0) of type ConferenceCreateRequest */
-	per_write_selection(s,
-	                    0x08); /* select optional userData from ConferenceCreateRequest */
+	if (!per_write_choice(s, 0)) /* From ConnectGCCPDU select conferenceCreateRequest (0) of type
+	                                 ConferenceCreateRequest */
+		return FALSE;
+	if (!per_write_selection(s, 0x08)) /* select optional userData from ConferenceCreateRequest */
+		return FALSE;
 	/* ConferenceCreateRequest::conferenceName */
-	per_write_numeric_string(s, (BYTE*)"1", 1, 1); /* ConferenceName::numeric */
-	per_write_padding(s, 1); /* padding */
+	if (!per_write_numeric_string(s, (BYTE*)"1", 1, 1)) /* ConferenceName::numeric */
+		return FALSE;
+	if (!per_write_padding(s, 1)) /* padding */
+		return FALSE;
 	/* UserData (SET OF SEQUENCE) */
-	per_write_number_of_sets(s, 1); /* one set of UserData */
-	per_write_choice(s,
-	                 0xC0); /* UserData::value present + select h221NonStandard (1) */
+	if (!per_write_number_of_sets(s, 1)) /* one set of UserData */
+		return FALSE;
+	if (!per_write_choice(s, 0xC0)) /* UserData::value present + select h221NonStandard (1) */
+		return FALSE;
 	/* h221NonStandard */
-	per_write_octet_string(s, h221_cs_key, 4,
-	                       4); /* h221NonStandard, client-to-server H.221 key, "Duca" */
+	if (!per_write_octet_string(s, h221_cs_key, 4,
+	                            4)) /* h221NonStandard, client-to-server H.221 key, "Duca" */
+		return FALSE;
 	/* userData::value (OCTET_STRING) */
-	per_write_octet_string(s, Stream_Buffer(userData), Stream_GetPosition(userData),
-	                       0); /* array of client data blocks */
+	return per_write_octet_string(s, Stream_Buffer(userData), Stream_GetPosition(userData),
+	                              0); /* array of client data blocks */
 }
 
 BOOL gcc_read_conference_create_response(wStream* s, rdpMcs* mcs)
@@ -273,8 +313,7 @@ BOOL gcc_read_conference_create_response(wStream* s, rdpMcs* mcs)
 	BYTE number;
 
 	/* ConnectData */
-	if (!per_read_choice(s, &choice) ||
-	    !per_read_object_identifier(s, t124_02_98_oid))
+	if (!per_read_choice(s, &choice) || !per_read_object_identifier(s, t124_02_98_oid))
 		return FALSE;
 
 	/* ConnectData::connectPDU (OCTET_STRING) */
@@ -316,43 +355,52 @@ BOOL gcc_read_conference_create_response(wStream* s, rdpMcs* mcs)
 
 	if (!gcc_read_server_data_blocks(s, mcs, length))
 	{
-		WLog_ERR(TAG,
-		         "gcc_read_conference_create_response: gcc_read_server_data_blocks failed");
+		WLog_ERR(TAG, "gcc_read_conference_create_response: gcc_read_server_data_blocks failed");
 		return FALSE;
 	}
 
 	return TRUE;
 }
 
-void gcc_write_conference_create_response(wStream* s, wStream* userData)
+BOOL gcc_write_conference_create_response(wStream* s, wStream* userData)
 {
 	/* ConnectData */
-	per_write_choice(s, 0);
-	per_write_object_identifier(s, t124_02_98_oid);
+	if (!per_write_choice(s, 0))
+		return FALSE;
+	if (!per_write_object_identifier(s, t124_02_98_oid))
+		return FALSE;
 	/* ConnectData::connectPDU (OCTET_STRING) */
 	/* This length MUST be ignored by the client according to [MS-RDPBCGR] */
-	per_write_length(s, 0x2A);
+	if (!per_write_length(s, 0x2A))
+		return FALSE;
 	/* ConnectGCCPDU */
-	per_write_choice(s, 0x14);
+	if (!per_write_choice(s, 0x14))
+		return FALSE;
 	/* ConferenceCreateResponse::nodeID (UserID) */
-	per_write_integer16(s, 0x79F3, 1001);
+	if (!per_write_integer16(s, 0x79F3, 1001))
+		return FALSE;
 	/* ConferenceCreateResponse::tag (INTEGER) */
-	per_write_integer(s, 1);
+	if (!per_write_integer(s, 1))
+		return FALSE;
 	/* ConferenceCreateResponse::result (ENUMERATED) */
-	per_write_enumerated(s, 0, MCS_Result_enum_length);
+	if (!per_write_enumerated(s, 0, MCS_Result_enum_length))
+		return FALSE;
 	/* number of UserData sets */
-	per_write_number_of_sets(s, 1);
+	if (!per_write_number_of_sets(s, 1))
+		return FALSE;
 	/* UserData::value present + select h221NonStandard (1) */
-	per_write_choice(s, 0xC0);
+	if (!per_write_choice(s, 0xC0))
+		return FALSE;
 	/* h221NonStandard */
-	per_write_octet_string(s, h221_sc_key, 4,
-	                       4); /* h221NonStandard, server-to-client H.221 key, "McDn" */
+	if (!per_write_octet_string(s, h221_sc_key, 4,
+	                            4)) /* h221NonStandard, server-to-client H.221 key, "McDn" */
+		return FALSE;
 	/* userData (OCTET_STRING) */
-	per_write_octet_string(s, Stream_Buffer(userData), Stream_GetPosition(userData),
-	                       0); /* array of server data blocks */
+	return per_write_octet_string(s, Stream_Buffer(userData), Stream_GetPosition(userData),
+	                              0); /* array of server data blocks */
 }
 
-BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, int length)
+BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 {
 	UINT16 type;
 	UINT16 blockLength;
@@ -420,7 +468,7 @@ BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, int length)
 				break;
 
 			default:
-				WLog_ERR(TAG,  "Unknown GCC client data block: 0x%04"PRIX16"", type);
+				WLog_ERR(TAG, "Unknown GCC client data block: 0x%04" PRIX16 "", type);
 				Stream_Seek(s, blockLength - 4);
 				break;
 		}
@@ -430,7 +478,8 @@ BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, int length)
 		if (endPos != (begPos + blockLength))
 		{
 			WLog_ERR(TAG,
-			         "Error parsing GCC client data block 0x%04"PRIX16": Actual Offset: %d Expected Offset: %d",
+			         "Error parsing GCC client data block 0x%04" PRIX16
+			         ": Actual Offset: %d Expected Offset: %d",
 			         type, endPos, begPos + blockLength);
 		}
 
@@ -441,13 +490,23 @@ BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, int length)
 	return TRUE;
 }
 
-void gcc_write_client_data_blocks(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_data_blocks(wStream* s, rdpMcs* mcs)
 {
-	rdpSettings* settings = mcs->settings;
-	gcc_write_client_core_data(s, mcs);
-	gcc_write_client_cluster_data(s, mcs);
-	gcc_write_client_security_data(s, mcs);
-	gcc_write_client_network_data(s, mcs);
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_client_core_data(s, mcs) || !gcc_write_client_cluster_data(s, mcs) ||
+	    !gcc_write_client_security_data(s, mcs) || !gcc_write_client_network_data(s, mcs))
+		return FALSE;
 
 	/* extended client data supported */
 
@@ -455,37 +514,38 @@ void gcc_write_client_data_blocks(wStream* s, rdpMcs* mcs)
 	{
 		if (settings->UseMultimon && !settings->SpanMonitors)
 		{
-			gcc_write_client_monitor_data(s, mcs);
-			gcc_write_client_monitor_extended_data(s, mcs);
+			if (!gcc_write_client_monitor_data(s, mcs) ||
+			    !gcc_write_client_monitor_extended_data(s, mcs))
+				return FALSE;
 		}
 
-		gcc_write_client_message_channel_data(s, mcs);
-		gcc_write_client_multitransport_channel_data(s, mcs);
+		if (!gcc_write_client_message_channel_data(s, mcs) ||
+		    !gcc_write_client_multitransport_channel_data(s, mcs))
+			return FALSE;
 	}
 	else
 	{
 		if (settings->UseMultimon && !settings->SpanMonitors)
 		{
-			WLog_ERR(TAG,
-			         "WARNING: true multi monitor support was not advertised by server!");
+			WLog_ERR(TAG, "WARNING: true multi monitor support was not advertised by server!");
 
 			if (settings->ForceMultimon)
 			{
-				WLog_ERR(TAG,
-				         "Sending multi monitor information anyway (may break connectivity!)");
-				gcc_write_client_monitor_data(s, mcs);
-				gcc_write_client_monitor_extended_data(s, mcs);
+				WLog_ERR(TAG, "Sending multi monitor information anyway (may break connectivity!)");
+				if (!gcc_write_client_monitor_data(s, mcs) ||
+				    !gcc_write_client_monitor_extended_data(s, mcs))
+					return FALSE;
 			}
 			else
 			{
-				WLog_ERR(TAG,
-				         "Use /multimon:force to force sending multi monitor information");
+				WLog_ERR(TAG, "Use /multimon:force to force sending multi monitor information");
 			}
 		}
 	}
+	return TRUE;
 }
 
-BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, int length)
+BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 {
 	UINT16 type;
 	UINT16 offset = 0;
@@ -494,27 +554,36 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, int length)
 
 	while (offset < length)
 	{
-		holdp = Stream_Pointer(s);
+		size_t rest;
+		wStream sub;
 
 		if (!gcc_read_user_data_header(s, &type, &blockLength))
 		{
-			WLog_ERR(TAG,  "gcc_read_server_data_blocks: gcc_read_user_data_header failed");
+			WLog_ERR(TAG, "gcc_read_server_data_blocks: gcc_read_user_data_header failed");
 			return FALSE;
 		}
+		holdp = Stream_Pointer(s);
+		Stream_StaticInit(&sub, holdp, blockLength - 4);
+		if (!Stream_SafeSeek(s, blockLength - 4))
+		{
+			WLog_ERR(TAG, "gcc_read_server_data_blocks: stream too short");
+			return FALSE;
+		}
+		offset += blockLength;
 
 		switch (type)
 		{
 			case SC_CORE:
-				if (!gcc_read_server_core_data(s, mcs))
+				if (!gcc_read_server_core_data(&sub, mcs))
 				{
-					WLog_ERR(TAG,  "gcc_read_server_data_blocks: gcc_read_server_core_data failed");
+					WLog_ERR(TAG, "gcc_read_server_data_blocks: gcc_read_server_core_data failed");
 					return FALSE;
 				}
 
 				break;
 
 			case SC_SECURITY:
-				if (!gcc_read_server_security_data(s, mcs))
+				if (!gcc_read_server_security_data(&sub, mcs))
 				{
 					WLog_ERR(TAG,
 					         "gcc_read_server_data_blocks: gcc_read_server_security_data failed");
@@ -524,7 +593,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, int length)
 				break;
 
 			case SC_NET:
-				if (!gcc_read_server_network_data(s, mcs))
+				if (!gcc_read_server_network_data(&sub, mcs))
 				{
 					WLog_ERR(TAG,
 					         "gcc_read_server_data_blocks: gcc_read_server_network_data failed");
@@ -534,32 +603,38 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, int length)
 				break;
 
 			case SC_MCS_MSGCHANNEL:
-				if (!gcc_read_server_message_channel_data(s, mcs))
+				if (!gcc_read_server_message_channel_data(&sub, mcs))
 				{
-					WLog_ERR(TAG,
-					         "gcc_read_server_data_blocks: gcc_read_server_message_channel_data failed");
+					WLog_ERR(
+					    TAG,
+					    "gcc_read_server_data_blocks: gcc_read_server_message_channel_data failed");
 					return FALSE;
 				}
 
 				break;
 
 			case SC_MULTITRANSPORT:
-				if (!gcc_read_server_multitransport_channel_data(s, mcs))
+				if (!gcc_read_server_multitransport_channel_data(&sub, mcs))
 				{
-					WLog_ERR(TAG,
-					         "gcc_read_server_data_blocks: gcc_read_server_multitransport_channel_data failed");
+					WLog_ERR(TAG, "gcc_read_server_data_blocks: "
+					              "gcc_read_server_multitransport_channel_data failed");
 					return FALSE;
 				}
 
 				break;
 
 			default:
-				WLog_ERR(TAG,  "gcc_read_server_data_blocks: ignoring type=%"PRIu16"", type);
+				WLog_ERR(TAG, "gcc_read_server_data_blocks: ignoring type=%" PRIu16 "", type);
 				break;
 		}
 
-		offset += blockLength;
-		Stream_SetPointer(s, holdp + blockLength);
+		rest = Stream_GetRemainingLength(&sub);
+		if (rest > 0)
+		{
+			WLog_WARN(
+			    TAG, "gcc_read_server_data_blocks: ignoring %" PRIuz " bytes with type=%" PRIu16 "",
+			    rest, type);
+		}
 	}
 
 	return TRUE;
@@ -567,12 +642,13 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, int length)
 
 BOOL gcc_write_server_data_blocks(wStream* s, rdpMcs* mcs)
 {
-	return gcc_write_server_core_data(s, mcs) && /* serverCoreData */
-	       gcc_write_server_network_data(s, mcs) && /* serverNetworkData */
-	       gcc_write_server_security_data(s, mcs) && /* serverSecurityData */
+	return gcc_write_server_core_data(s, mcs) &&          /* serverCoreData */
+	       gcc_write_server_network_data(s, mcs) &&       /* serverNetworkData */
+	       gcc_write_server_security_data(s, mcs) &&      /* serverSecurityData */
 	       gcc_write_server_message_channel_data(s, mcs); /* serverMessageChannelData */
 	/* TODO: Send these GCC data blocks only when the client sent them */
-	//gcc_write_server_multitransport_channel_data(s, settings); /* serverMultitransportChannelData */
+	// gcc_write_server_multitransport_channel_data(s, settings); /* serverMultitransportChannelData
+	// */
 }
 
 BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length)
@@ -580,10 +656,10 @@ BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length)
 	if (Stream_GetRemainingLength(s) < 4)
 		return FALSE;
 
-	Stream_Read_UINT16(s, *type); /* type */
+	Stream_Read_UINT16(s, *type);   /* type */
 	Stream_Read_UINT16(s, *length); /* length */
 
-	if (Stream_GetRemainingLength(s) < (size_t)(*length - 4))
+	if ((*length < 4) || (Stream_GetRemainingLength(s) < (size_t)(*length - 4)))
 		return FALSE;
 
 	return TRUE;
@@ -597,10 +673,13 @@ BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length)
  * @param length data block length
  */
 
-void gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length)
+BOOL gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length)
 {
-	Stream_Write_UINT16(s, type); /* type */
+	if (!Stream_EnsureRemainingCapacity(s, 4 + length))
+		return FALSE;
+	Stream_Write_UINT16(s, type);   /* type */
 	Stream_Write_UINT16(s, length); /* length */
+	return TRUE;
 }
 
 /**
@@ -622,7 +701,17 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	UINT16 supportedColorDepths = 0;
 	UINT32 serverSelectedProtocol = 0;
 	UINT16 earlyCapabilityFlags = 0;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	/* Length of all required fields, until imeFileName */
 	if (blockLength < 128)
@@ -630,16 +719,15 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 
 	Stream_Read_UINT32(s, version); /* version (4 bytes) */
 	settings->RdpVersion = rdp_version_common(version, settings->RdpVersion);
-	Stream_Read_UINT16(s, settings->DesktopWidth); /* DesktopWidth (2 bytes) */
+	Stream_Read_UINT16(s, settings->DesktopWidth);  /* DesktopWidth (2 bytes) */
 	Stream_Read_UINT16(s, settings->DesktopHeight); /* DesktopHeight (2 bytes) */
-	Stream_Read_UINT16(s, colorDepth); /* ColorDepth (2 bytes) */
+	Stream_Read_UINT16(s, colorDepth);              /* ColorDepth (2 bytes) */
 	Stream_Seek_UINT16(s); /* SASSequence (Secure Access Sequence) (2 bytes) */
 	Stream_Read_UINT32(s, settings->KeyboardLayout); /* KeyboardLayout (4 bytes) */
-	Stream_Read_UINT32(s, settings->ClientBuild); /* ClientBuild (4 bytes) */
+	Stream_Read_UINT32(s, settings->ClientBuild);    /* ClientBuild (4 bytes) */
 
 	/* clientName (32 bytes, null-terminated unicode, truncated to 15 characters) */
-	if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*) Stream_Pointer(s), 32 / 2,
-	                       &str, 0, NULL, NULL) < 1)
+	if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 32 / 2, &str, 0, NULL, NULL) < 1)
 	{
 		WLog_ERR(TAG, "failed to convert client host name");
 		return FALSE;
@@ -649,12 +737,10 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	free(settings->ClientHostname);
 	settings->ClientHostname = str;
 	str = NULL;
-	Stream_Read_UINT32(s, settings->KeyboardType); /* KeyboardType (4 bytes) */
-	Stream_Read_UINT32(s,
-	                   settings->KeyboardSubType); /* KeyboardSubType (4 bytes) */
-	Stream_Read_UINT32(s,
-	                   settings->KeyboardFunctionKey); /* KeyboardFunctionKey (4 bytes) */
-	Stream_Seek(s, 64); /* imeFileName (64 bytes) */
+	Stream_Read_UINT32(s, settings->KeyboardType);        /* KeyboardType (4 bytes) */
+	Stream_Read_UINT32(s, settings->KeyboardSubType);     /* KeyboardSubType (4 bytes) */
+	Stream_Read_UINT32(s, settings->KeyboardFunctionKey); /* KeyboardFunctionKey (4 bytes) */
+	Stream_Seek(s, 64);                                   /* imeFileName (64 bytes) */
 	blockLength -= 128;
 
 	/**
@@ -693,16 +779,14 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 2)
 			break;
 
-		Stream_Read_UINT16(s,
-		                   supportedColorDepths); /* supportedColorDepths (2 bytes) */
+		Stream_Read_UINT16(s, supportedColorDepths); /* supportedColorDepths (2 bytes) */
 		blockLength -= 2;
 
 		if (blockLength < 2)
 			break;
 
-		Stream_Read_UINT16(s,
-		                   earlyCapabilityFlags); /* earlyCapabilityFlags (2 bytes) */
-		settings->EarlyCapabilityFlags = (UINT32) earlyCapabilityFlags;
+		Stream_Read_UINT16(s, earlyCapabilityFlags); /* earlyCapabilityFlags (2 bytes) */
+		settings->EarlyCapabilityFlags = (UINT32)earlyCapabilityFlags;
 		blockLength -= 2;
 
 		/* clientDigProductId (64 bytes): Contains a value that uniquely identifies the client */
@@ -710,8 +794,8 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 64)
 			break;
 
-		if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*) Stream_Pointer(s), 64 / 2,
-		                       &str, 0, NULL, NULL) < 1)
+		if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 64 / 2, &str, 0, NULL, NULL) <
+		    1)
 		{
 			WLog_ERR(TAG, "failed to convert the client product identifier");
 			return FALSE;
@@ -737,15 +821,13 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 4)
 			break;
 
-		Stream_Read_UINT32(s,
-		                   serverSelectedProtocol); /* serverSelectedProtocol (4 bytes) */
+		Stream_Read_UINT32(s, serverSelectedProtocol); /* serverSelectedProtocol (4 bytes) */
 		blockLength -= 4;
 
 		if (blockLength < 4)
 			break;
 
-		Stream_Read_UINT32(s,
-		                   settings->DesktopPhysicalWidth); /* desktopPhysicalWidth (4 bytes) */
+		Stream_Read_UINT32(s, settings->DesktopPhysicalWidth); /* desktopPhysicalWidth (4 bytes) */
 		blockLength -= 4;
 
 		if (blockLength < 4)
@@ -758,27 +840,23 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 2)
 			break;
 
-		Stream_Read_UINT16(s,
-		                   settings->DesktopOrientation); /* desktopOrientation (2 bytes) */
+		Stream_Read_UINT16(s, settings->DesktopOrientation); /* desktopOrientation (2 bytes) */
 		blockLength -= 2;
 
 		if (blockLength < 4)
 			break;
 
-		Stream_Read_UINT32(s,
-		                   settings->DesktopScaleFactor); /* desktopScaleFactor (4 bytes) */
+		Stream_Read_UINT32(s, settings->DesktopScaleFactor); /* desktopScaleFactor (4 bytes) */
 		blockLength -= 4;
 
 		if (blockLength < 4)
 			break;
 
-		Stream_Read_UINT32(s,
-		                   settings->DeviceScaleFactor); /* deviceScaleFactor (4 bytes) */
+		Stream_Read_UINT32(s, settings->DeviceScaleFactor); /* deviceScaleFactor (4 bytes) */
 
 		if (settings->SelectedProtocol != serverSelectedProtocol)
 			return FALSE;
-	}
-	while (0);
+	} while (0);
 
 	if (highColorDepth > 0)
 	{
@@ -840,28 +918,28 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		settings->ColorDepth = clientColorDepth;
 
 	if (settings->NetworkAutoDetect)
-		settings->NetworkAutoDetect = (earlyCapabilityFlags &
-		                               RNS_UD_CS_SUPPORT_NETWORK_AUTODETECT) ? TRUE : FALSE;
+		settings->NetworkAutoDetect =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_NETCHAR_AUTODETECT) ? TRUE : FALSE;
 
 	if (settings->SupportHeartbeatPdu)
-		settings->SupportHeartbeatPdu = (earlyCapabilityFlags &
-		                                 RNS_UD_CS_SUPPORT_HEARTBEAT_PDU) ? TRUE : FALSE;
+		settings->SupportHeartbeatPdu =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_HEARTBEAT_PDU) ? TRUE : FALSE;
 
 	if (settings->SupportGraphicsPipeline)
-		settings->SupportGraphicsPipeline = (earlyCapabilityFlags &
-		                                     RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL) ? TRUE : FALSE;
+		settings->SupportGraphicsPipeline =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL) ? TRUE : FALSE;
 
 	if (settings->SupportDynamicTimeZone)
-		settings->SupportDynamicTimeZone = (earlyCapabilityFlags &
-		                                    RNS_UD_CS_SUPPORT_DYNAMIC_TIME_ZONE) ? TRUE : FALSE;
+		settings->SupportDynamicTimeZone =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_DYNAMIC_TIME_ZONE) ? TRUE : FALSE;
 
 	if (settings->SupportMonitorLayoutPdu)
-		settings->SupportMonitorLayoutPdu = (earlyCapabilityFlags &
-		                                     RNS_UD_CS_SUPPORT_MONITOR_LAYOUT_PDU) ? TRUE : FALSE;
+		settings->SupportMonitorLayoutPdu =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_MONITOR_LAYOUT_PDU) ? TRUE : FALSE;
 
 	if (settings->SupportStatusInfoPdu)
-		settings->SupportStatusInfoPdu = (earlyCapabilityFlags &
-		                                  RNS_UD_CS_SUPPORT_STATUSINFO_PDU) ? TRUE : FALSE;
+		settings->SupportStatusInfoPdu =
+		    (earlyCapabilityFlags & RNS_UD_CS_SUPPORT_STATUSINFO_PDU) ? TRUE : FALSE;
 
 	if (!(earlyCapabilityFlags & RNS_UD_CS_VALID_CONNECTION_TYPE))
 		connectionType = 0;
@@ -878,7 +956,7 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
  * @param settings rdp settings
  */
 
-void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 {
 	WCHAR* clientName = NULL;
 	int clientNameLength;
@@ -888,21 +966,31 @@ void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 	UINT16 earlyCapabilityFlags;
 	WCHAR* clientDigProductId = NULL;
 	int clientDigProductIdLength;
-	rdpSettings* settings = mcs->settings;
-	gcc_write_user_data_header(s, CS_CORE, 234);
-	clientNameLength = ConvertToUnicode(CP_UTF8, 0, settings->ClientHostname, -1,
-	                                    &clientName, 0);
-	clientDigProductIdLength = ConvertToUnicode(CP_UTF8, 0,
-	                           settings->ClientProductId, -1, &clientDigProductId, 0);
-	Stream_Write_UINT32(s, settings->RdpVersion); /* Version */
-	Stream_Write_UINT16(s, settings->DesktopWidth); /* DesktopWidth */
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_user_data_header(s, CS_CORE, 234))
+		return FALSE;
+	clientNameLength = ConvertToUnicode(CP_UTF8, 0, settings->ClientHostname, -1, &clientName, 0);
+	clientDigProductIdLength =
+	    ConvertToUnicode(CP_UTF8, 0, settings->ClientProductId, -1, &clientDigProductId, 0);
+	Stream_Write_UINT32(s, settings->RdpVersion);    /* Version */
+	Stream_Write_UINT16(s, settings->DesktopWidth);  /* DesktopWidth */
 	Stream_Write_UINT16(s, settings->DesktopHeight); /* DesktopHeight */
 	Stream_Write_UINT16(s,
 	                    RNS_UD_COLOR_8BPP); /* ColorDepth, ignored because of postBeta2ColorDepth */
-	Stream_Write_UINT16(s,
-	                    RNS_UD_SAS_DEL);	/* SASSequence (Secure Access Sequence) */
+	Stream_Write_UINT16(s, RNS_UD_SAS_DEL); /* SASSequence (Secure Access Sequence) */
 	Stream_Write_UINT32(s, settings->KeyboardLayout); /* KeyboardLayout */
-	Stream_Write_UINT32(s, settings->ClientBuild); /* ClientBuild */
+	Stream_Write_UINT32(s, settings->ClientBuild);    /* ClientBuild */
 
 	/* clientName (32 bytes, null-terminated unicode, truncated to 15 characters) */
 
@@ -911,29 +999,22 @@ void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 		clientNameLength = 16;
 		clientName[clientNameLength - 1] = 0;
 	}
+	if (!Stream_EnsureRemainingCapacity(s, 32 + 12 + 64 + 8))
+		return FALSE;
 
 	Stream_Write(s, clientName, (clientNameLength * 2));
 	Stream_Zero(s, 32 - (clientNameLength * 2));
 	free(clientName);
-	Stream_Write_UINT32(s, settings->KeyboardType); /* KeyboardType */
-	Stream_Write_UINT32(s, settings->KeyboardSubType); /* KeyboardSubType */
+	Stream_Write_UINT32(s, settings->KeyboardType);        /* KeyboardType */
+	Stream_Write_UINT32(s, settings->KeyboardSubType);     /* KeyboardSubType */
 	Stream_Write_UINT32(s, settings->KeyboardFunctionKey); /* KeyboardFunctionKey */
-	Stream_Zero(s, 64); /* imeFileName */
-	Stream_Write_UINT16(s, RNS_UD_COLOR_8BPP); /* postBeta2ColorDepth */
-	Stream_Write_UINT16(s, 1); /* clientProductID */
+	Stream_Zero(s, 64);                                    /* imeFileName */
+	Stream_Write_UINT16(s, RNS_UD_COLOR_8BPP);             /* postBeta2ColorDepth */
+	Stream_Write_UINT16(s, 1);                             /* clientProductID */
 	Stream_Write_UINT32(s, 0); /* serialNumber (should be initialized to 0) */
 	highColorDepth = MIN(settings->ColorDepth, 24);
-	supportedColorDepths =
-	    RNS_UD_24BPP_SUPPORT |
-	    RNS_UD_16BPP_SUPPORT |
-	    RNS_UD_15BPP_SUPPORT;
+	supportedColorDepths = RNS_UD_24BPP_SUPPORT | RNS_UD_16BPP_SUPPORT | RNS_UD_15BPP_SUPPORT;
 	earlyCapabilityFlags = RNS_UD_CS_SUPPORT_ERRINFO_PDU;
-
-	if (settings->NetworkAutoDetect)
-		settings->ConnectionType = CONNECTION_TYPE_AUTODETECT;
-
-	if (settings->RemoteFxCodec && !settings->NetworkAutoDetect)
-		settings->ConnectionType = CONNECTION_TYPE_LAN;
 
 	connectionType = settings->ConnectionType;
 
@@ -947,7 +1028,7 @@ void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 	}
 
 	if (settings->NetworkAutoDetect)
-		earlyCapabilityFlags |= RNS_UD_CS_SUPPORT_NETWORK_AUTODETECT;
+		earlyCapabilityFlags |= RNS_UD_CS_SUPPORT_NETCHAR_AUTODETECT;
 
 	if (settings->SupportHeartbeatPdu)
 		earlyCapabilityFlags |= RNS_UD_CS_SUPPORT_HEARTBEAT_PDU;
@@ -963,8 +1044,10 @@ void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 
 	if (settings->SupportStatusInfoPdu)
 		earlyCapabilityFlags |= RNS_UD_CS_SUPPORT_STATUSINFO_PDU;
+	if (!Stream_EnsureRemainingCapacity(s, 6))
+		return FALSE;
 
-	Stream_Write_UINT16(s, highColorDepth); /* highColorDepth */
+	Stream_Write_UINT16(s, highColorDepth);       /* highColorDepth */
 	Stream_Write_UINT16(s, supportedColorDepths); /* supportedColorDepths */
 	Stream_Write_UINT16(s, earlyCapabilityFlags); /* earlyCapabilityFlags */
 
@@ -975,19 +1058,20 @@ void gcc_write_client_core_data(wStream* s, rdpMcs* mcs)
 		clientDigProductId[clientDigProductIdLength - 1] = 0;
 	}
 
+	if (!Stream_EnsureRemainingCapacity(s, 64 + 24))
+		return FALSE;
 	Stream_Write(s, clientDigProductId, (clientDigProductIdLength * 2));
 	Stream_Zero(s, 64 - (clientDigProductIdLength * 2));
 	free(clientDigProductId);
-	Stream_Write_UINT8(s, connectionType); /* connectionType */
-	Stream_Write_UINT8(s, 0); /* pad1octet */
-	Stream_Write_UINT32(s, settings->SelectedProtocol); /* serverSelectedProtocol */
-	Stream_Write_UINT32(s,
-	                    settings->DesktopPhysicalWidth);	/* desktopPhysicalWidth */
-	Stream_Write_UINT32(s,
-	                    settings->DesktopPhysicalHeight); /* desktopPhysicalHeight */
-	Stream_Write_UINT16(s, settings->DesktopOrientation); /* desktopOrientation */
-	Stream_Write_UINT32(s, settings->DesktopScaleFactor); /* desktopScaleFactor */
-	Stream_Write_UINT32(s, settings->DeviceScaleFactor); /* deviceScaleFactor */
+	Stream_Write_UINT8(s, connectionType);                   /* connectionType */
+	Stream_Write_UINT8(s, 0);                                /* pad1octet */
+	Stream_Write_UINT32(s, settings->SelectedProtocol);      /* serverSelectedProtocol */
+	Stream_Write_UINT32(s, settings->DesktopPhysicalWidth);  /* desktopPhysicalWidth */
+	Stream_Write_UINT32(s, settings->DesktopPhysicalHeight); /* desktopPhysicalHeight */
+	Stream_Write_UINT16(s, settings->DesktopOrientation);    /* desktopOrientation */
+	Stream_Write_UINT32(s, settings->DesktopScaleFactor);    /* desktopScaleFactor */
+	Stream_Write_UINT32(s, settings->DeviceScaleFactor);     /* deviceScaleFactor */
+	return TRUE;
 }
 
 BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs)
@@ -995,7 +1079,17 @@ BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs)
 	UINT32 serverVersion;
 	UINT32 clientRequestedProtocols;
 	UINT32 earlyCapabilityFlags;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (Stream_GetRemainingLength(s) < 4)
 		return FALSE;
@@ -1016,24 +1110,30 @@ BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs)
 	return TRUE;
 }
 
-BOOL gcc_write_server_core_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_server_core_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 earlyCapabilityFlags = 0;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
 
-	if (!Stream_EnsureRemainingCapacity(s, 20))
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_user_data_header(s, SC_CORE, 16))
 		return FALSE;
-
-	gcc_write_user_data_header(s, SC_CORE, 16);
 
 	if (settings->SupportDynamicTimeZone)
 		earlyCapabilityFlags |= RNS_UD_SC_DYNAMIC_DST_SUPPORTED;
 
-	Stream_Write_UINT32(s, settings->RdpVersion); /* version (4 bytes) */
-	Stream_Write_UINT32(s,
-	                    settings->RequestedProtocols); /* clientRequestedProtocols (4 bytes) */
-	Stream_Write_UINT32(s,
-	                    earlyCapabilityFlags); /* earlyCapabilityFlags (4 bytes) */
+	Stream_Write_UINT32(s, settings->RdpVersion);         /* version (4 bytes) */
+	Stream_Write_UINT32(s, settings->RequestedProtocols); /* clientRequestedProtocols (4 bytes) */
+	Stream_Write_UINT32(s, earlyCapabilityFlags);         /* earlyCapabilityFlags (4 bytes) */
 	return TRUE;
 }
 
@@ -1046,7 +1146,17 @@ BOOL gcc_write_server_core_data(wStream* s, rdpMcs* mcs)
 
 BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
 		return FALSE;
@@ -1075,36 +1185,59 @@ BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
  * @param settings rdp settings
  */
 
-void gcc_write_client_security_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_security_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpSettings* settings = mcs->settings;
-	gcc_write_user_data_header(s, CS_SECURITY, 12);
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_user_data_header(s, CS_SECURITY, 12))
+		return FALSE;
 
 	if (settings->UseRdpSecurityLayer)
 	{
 		Stream_Write_UINT32(s, settings->EncryptionMethods); /* encryptionMethods */
-		Stream_Write_UINT32(s, 0); /* extEncryptionMethods */
+		Stream_Write_UINT32(s, 0);                           /* extEncryptionMethods */
 	}
 	else
 	{
 		/* French locale, disable encryption */
-		Stream_Write_UINT32(s, 0); /* encryptionMethods */
+		Stream_Write_UINT32(s, 0);                           /* encryptionMethods */
 		Stream_Write_UINT32(s, settings->EncryptionMethods); /* extEncryptionMethods */
 	}
+	return TRUE;
 }
 
 BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 {
-	BYTE* data;
+	const BYTE* data;
 	UINT32 length;
-	rdpSettings* settings = mcs->settings;
 	BOOL validCryptoConfig = FALSE;
 	UINT32 serverEncryptionMethod;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (Stream_GetRemainingLength(s) < 8)
 		return FALSE;
 
-	Stream_Read_UINT32(s, serverEncryptionMethod); /* encryptionMethod */
+	Stream_Read_UINT32(s, serverEncryptionMethod);    /* encryptionMethod */
 	Stream_Read_UINT32(s, settings->EncryptionLevel); /* encryptionLevel */
 
 	/* Only accept valid/known encryption methods */
@@ -1131,15 +1264,14 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 			break;
 
 		default:
-			WLog_ERR(TAG, "Received unknown encryption method %08"PRIX32"",
+			WLog_ERR(TAG, "Received unknown encryption method %08" PRIX32 "",
 			         serverEncryptionMethod);
 			return FALSE;
 	}
 
-	if (settings->UseRdpSecurityLayer
-	    && !(settings->EncryptionMethods & serverEncryptionMethod))
+	if (settings->UseRdpSecurityLayer && !(settings->EncryptionMethods & serverEncryptionMethod))
 	{
-		WLog_WARN(TAG, "Server uses non-advertised encryption method 0x%08"PRIX32"",
+		WLog_WARN(TAG, "Server uses non-advertised encryption method 0x%08" PRIX32 "",
 		          serverEncryptionMethod);
 		/* FIXME: Should we return FALSE; in this case ?? */
 	}
@@ -1179,14 +1311,15 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 			break;
 
 		default:
-			WLog_ERR(TAG, "Received unknown encryption level 0x%08"PRIX32"",
+			WLog_ERR(TAG, "Received unknown encryption level 0x%08" PRIX32 "",
 			         settings->EncryptionLevel);
 	}
 
 	if (!validCryptoConfig)
 	{
 		WLog_ERR(TAG,
-		         "Received invalid cryptographic configuration (level=0x%08"PRIX32" method=0x%08"PRIX32")",
+		         "Received invalid cryptographic configuration (level=0x%08" PRIX32
+		         " method=0x%08" PRIX32 ")",
 		         settings->EncryptionLevel, settings->EncryptionMethods);
 		return FALSE;
 	}
@@ -1201,7 +1334,7 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 	if (Stream_GetRemainingLength(s) < 8)
 		return FALSE;
 
-	Stream_Read_UINT32(s, settings->ServerRandomLength); /* serverRandomLen */
+	Stream_Read_UINT32(s, settings->ServerRandomLength);      /* serverRandomLen */
 	Stream_Read_UINT32(s, settings->ServerCertificateLength); /* serverCertLen */
 
 	if ((settings->ServerRandomLength == 0) || (settings->ServerCertificateLength == 0))
@@ -1211,7 +1344,7 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 		return FALSE;
 
 	/* serverRandom */
-	settings->ServerRandom = (BYTE*) malloc(settings->ServerRandomLength);
+	settings->ServerRandom = (BYTE*)malloc(settings->ServerRandomLength);
 
 	if (!settings->ServerRandom)
 		goto fail;
@@ -1222,23 +1355,20 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 		goto fail;
 
 	/* serverCertificate */
-	settings->ServerCertificate = (BYTE*) malloc(settings->ServerCertificateLength);
+	settings->ServerCertificate = (BYTE*)malloc(settings->ServerCertificateLength);
 
 	if (!settings->ServerCertificate)
 		goto fail;
 
 	Stream_Read(s, settings->ServerCertificate, settings->ServerCertificateLength);
-	certificate_free(settings->RdpServerCertificate);
-	settings->RdpServerCertificate = certificate_new();
-
-	if (!settings->RdpServerCertificate)
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_RdpServerCertificate, certificate_new(),
+	                                      sizeof(rdpCertificate)))
 		goto fail;
 
 	data = settings->ServerCertificate;
 	length = settings->ServerCertificateLength;
 
-	if (!certificate_read_server_certificate(settings->RdpServerCertificate, data,
-	        length))
+	if (!certificate_read_server_certificate(settings->RdpServerCertificate, data, length))
 		goto fail;
 
 	return TRUE;
@@ -1250,16 +1380,11 @@ fail:
 	return FALSE;
 }
 
-static const BYTE initial_signature[] =
-{
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01
+static const BYTE initial_signature[] = {
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01
 };
 
 /*
@@ -1267,43 +1392,40 @@ static const BYTE initial_signature[] =
  * Yes, Terminal Services Private Key is publicly available.
  */
 
-const BYTE tssk_modulus[] =
-{
-	0x3d, 0x3a, 0x5e, 0xbd, 0x72, 0x43, 0x3e, 0xc9,
-	0x4d, 0xbb, 0xc1, 0x1e, 0x4a, 0xba, 0x5f, 0xcb,
-	0x3e, 0x88, 0x20, 0x87, 0xef, 0xf5, 0xc1, 0xe2,
-	0xd7, 0xb7, 0x6b, 0x9a, 0xf2, 0x52, 0x45, 0x95,
-	0xce, 0x63, 0x65, 0x6b, 0x58, 0x3a, 0xfe, 0xef,
-	0x7c, 0xe7, 0xbf, 0xfe, 0x3d, 0xf6, 0x5c, 0x7d,
-	0x6c, 0x5e, 0x06, 0x09, 0x1a, 0xf5, 0x61, 0xbb,
-	0x20, 0x93, 0x09, 0x5f, 0x05, 0x6d, 0xea, 0x87
+const BYTE tssk_modulus[] = { 0x3d, 0x3a, 0x5e, 0xbd, 0x72, 0x43, 0x3e, 0xc9, 0x4d, 0xbb, 0xc1,
+	                          0x1e, 0x4a, 0xba, 0x5f, 0xcb, 0x3e, 0x88, 0x20, 0x87, 0xef, 0xf5,
+	                          0xc1, 0xe2, 0xd7, 0xb7, 0x6b, 0x9a, 0xf2, 0x52, 0x45, 0x95, 0xce,
+	                          0x63, 0x65, 0x6b, 0x58, 0x3a, 0xfe, 0xef, 0x7c, 0xe7, 0xbf, 0xfe,
+	                          0x3d, 0xf6, 0x5c, 0x7d, 0x6c, 0x5e, 0x06, 0x09, 0x1a, 0xf5, 0x61,
+	                          0xbb, 0x20, 0x93, 0x09, 0x5f, 0x05, 0x6d, 0xea, 0x87 };
+
+const BYTE tssk_privateExponent[] = {
+	0x87, 0xa7, 0x19, 0x32, 0xda, 0x11, 0x87, 0x55, 0x58, 0x00, 0x16, 0x16, 0x25, 0x65, 0x68, 0xf8,
+	0x24, 0x3e, 0xe6, 0xfa, 0xe9, 0x67, 0x49, 0x94, 0xcf, 0x92, 0xcc, 0x33, 0x99, 0xe8, 0x08, 0x60,
+	0x17, 0x9a, 0x12, 0x9f, 0x24, 0xdd, 0xb1, 0x24, 0x99, 0xc7, 0x3a, 0xb8, 0x0a, 0x7b, 0x0d, 0xdd,
+	0x35, 0x07, 0x79, 0x17, 0x0b, 0x51, 0x9b, 0xb3, 0xc7, 0x10, 0x01, 0x13, 0xe7, 0x3f, 0xf3, 0x5f
 };
 
-const BYTE tssk_privateExponent[] =
-{
-	0x87, 0xa7, 0x19, 0x32, 0xda, 0x11, 0x87, 0x55,
-	0x58, 0x00, 0x16, 0x16, 0x25, 0x65, 0x68, 0xf8,
-	0x24, 0x3e, 0xe6, 0xfa, 0xe9, 0x67, 0x49, 0x94,
-	0xcf, 0x92, 0xcc, 0x33, 0x99, 0xe8, 0x08, 0x60,
-	0x17, 0x9a, 0x12, 0x9f, 0x24, 0xdd, 0xb1, 0x24,
-	0x99, 0xc7, 0x3a, 0xb8, 0x0a, 0x7b, 0x0d, 0xdd,
-	0x35, 0x07, 0x79, 0x17, 0x0b, 0x51, 0x9b, 0xb3,
-	0xc7, 0x10, 0x01, 0x13, 0xe7, 0x3f, 0xf3, 0x5f
-};
-
-const BYTE tssk_exponent[] =
-{
-	0x5b, 0x7b, 0x88, 0xc0
-};
+const BYTE tssk_exponent[] = { 0x5b, 0x7b, 0x88, 0xc0 };
 
 BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 {
 	BYTE* sigData;
-	int expLen, keyLen, sigDataLen;
+	size_t expLen = 0, keyLen, sigDataLen;
 	BYTE encryptedSignature[TSSK_KEY_LENGTH];
 	BYTE signature[sizeof(initial_signature)];
 	UINT32 headerLen, serverRandomLen, serverCertLen, wPublicKeyBlobLen;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	/**
 	 * Re: settings->EncryptionLevel:
@@ -1345,7 +1467,7 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 			break;
 
 		default:
-			WLog_ERR(TAG, "Invalid server encryption level 0x%08"PRIX32"",
+			WLog_ERR(TAG, "Invalid server encryption level 0x%08" PRIX32 "",
 			         settings->EncryptionLevel);
 			WLog_ERR(TAG, "Switching to encryption level CLIENT-COMPATIBLE");
 			settings->EncryptionLevel = ENCRYPTION_LEVEL_CLIENT_COMPATIBLE;
@@ -1364,8 +1486,7 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 			/* The only valid method is FIPS in this case */
 			if (!(settings->EncryptionMethods & ENCRYPTION_METHOD_FIPS))
 			{
-				WLog_WARN(TAG,
-				          "client does not support FIPS as required by server configuration");
+				WLog_WARN(TAG, "client does not support FIPS as required by server configuration");
 			}
 
 			settings->EncryptionMethods = ENCRYPTION_METHOD_FIPS;
@@ -1376,8 +1497,8 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 			/* Maximum key strength supported by the server must be used (128 bit)*/
 			if (!(settings->EncryptionMethods & ENCRYPTION_METHOD_128BIT))
 			{
-				WLog_WARN(TAG,
-				          "client does not support 128 bit encryption method as required by server configuration");
+				WLog_WARN(TAG, "client does not support 128 bit encryption method as required by "
+				               "server configuration");
 			}
 
 			settings->EncryptionMethods = ENCRYPTION_METHOD_128BIT;
@@ -1447,35 +1568,34 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 		serverRandomLen = 32;
 		keyLen = settings->RdpServerRsaKey->ModulusLength;
 		expLen = sizeof(settings->RdpServerRsaKey->exponent);
-		wPublicKeyBlobLen = 4; /* magic (RSA1) */
+		wPublicKeyBlobLen = 4;  /* magic (RSA1) */
 		wPublicKeyBlobLen += 4; /* keylen */
 		wPublicKeyBlobLen += 4; /* bitlen */
 		wPublicKeyBlobLen += 4; /* datalen */
 		wPublicKeyBlobLen += expLen;
 		wPublicKeyBlobLen += keyLen;
 		wPublicKeyBlobLen += 8; /* 8 bytes of zero padding */
-		serverCertLen = 4; /* dwVersion */
-		serverCertLen += 4; /* dwSigAlgId */
-		serverCertLen += 4; /* dwKeyAlgId */
-		serverCertLen += 2; /* wPublicKeyBlobType */
-		serverCertLen += 2; /* wPublicKeyBlobLen */
+		serverCertLen = 4;      /* dwVersion */
+		serverCertLen += 4;     /* dwSigAlgId */
+		serverCertLen += 4;     /* dwKeyAlgId */
+		serverCertLen += 2;     /* wPublicKeyBlobType */
+		serverCertLen += 2;     /* wPublicKeyBlobLen */
 		serverCertLen += wPublicKeyBlobLen;
-		serverCertLen += 2; /* wSignatureBlobType */
-		serverCertLen += 2; /* wSignatureBlobLen */
+		serverCertLen += 2;                          /* wSignatureBlobType */
+		serverCertLen += 2;                          /* wSignatureBlobLen */
 		serverCertLen += sizeof(encryptedSignature); /* SignatureBlob */
-		serverCertLen += 8; /* 8 bytes of zero padding */
+		serverCertLen += 8;                          /* 8 bytes of zero padding */
 		headerLen += sizeof(serverRandomLen);
 		headerLen += sizeof(serverCertLen);
 		headerLen += serverRandomLen;
 		headerLen += serverCertLen;
 	}
 
-	if (!Stream_EnsureRemainingCapacity(s, headerLen + 4))
+	if (!gcc_write_user_data_header(s, SC_SECURITY, headerLen))
 		return FALSE;
 
-	gcc_write_user_data_header(s, SC_SECURITY, headerLen);
 	Stream_Write_UINT32(s, settings->EncryptionMethods); /* encryptionMethod */
-	Stream_Write_UINT32(s, settings->EncryptionLevel); /* encryptionLevel */
+	Stream_Write_UINT32(s, settings->EncryptionLevel);   /* encryptionLevel */
 
 	if (settings->EncryptionMethods == ENCRYPTION_METHOD_NONE)
 	{
@@ -1483,9 +1603,9 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 	}
 
 	Stream_Write_UINT32(s, serverRandomLen); /* serverRandomLen */
-	Stream_Write_UINT32(s, serverCertLen); /* serverCertLen */
+	Stream_Write_UINT32(s, serverCertLen);   /* serverCertLen */
 	settings->ServerRandomLength = serverRandomLen;
-	settings->ServerRandom = (BYTE*) malloc(serverRandomLen);
+	settings->ServerRandom = (BYTE*)malloc(serverRandomLen);
 
 	if (!settings->ServerRandom)
 	{
@@ -1496,27 +1616,29 @@ BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 	Stream_Write(s, settings->ServerRandom, serverRandomLen);
 	sigData = Stream_Pointer(s);
 	Stream_Write_UINT32(s, CERT_CHAIN_VERSION_1); /* dwVersion (4 bytes) */
-	Stream_Write_UINT32(s, SIGNATURE_ALG_RSA); /* dwSigAlgId */
+	Stream_Write_UINT32(s, SIGNATURE_ALG_RSA);    /* dwSigAlgId */
 	Stream_Write_UINT32(s, KEY_EXCHANGE_ALG_RSA); /* dwKeyAlgId */
-	Stream_Write_UINT16(s, BB_RSA_KEY_BLOB); /* wPublicKeyBlobType */
-	Stream_Write_UINT16(s, wPublicKeyBlobLen); /* wPublicKeyBlobLen */
-	Stream_Write(s, "RSA1", 4); /* magic */
-	Stream_Write_UINT32(s, keyLen + 8); /* keylen */
-	Stream_Write_UINT32(s, keyLen * 8); /* bitlen */
-	Stream_Write_UINT32(s, keyLen - 1); /* datalen */
+	Stream_Write_UINT16(s, BB_RSA_KEY_BLOB);      /* wPublicKeyBlobType */
+	Stream_Write_UINT16(s, wPublicKeyBlobLen);    /* wPublicKeyBlobLen */
+	Stream_Write(s, "RSA1", 4);                   /* magic */
+	WINPR_ASSERT(keyLen > 0);
+	WINPR_ASSERT(keyLen <= UINT32_MAX / 8);
+	Stream_Write_UINT32(s, (UINT32)keyLen + 8); /* keylen */
+	Stream_Write_UINT32(s, (UINT32)keyLen * 8); /* bitlen */
+	Stream_Write_UINT32(s, (UINT32)keyLen - 1); /* datalen */
 	Stream_Write(s, settings->RdpServerRsaKey->exponent, expLen);
 	Stream_Write(s, settings->RdpServerRsaKey->Modulus, keyLen);
 	Stream_Zero(s, 8);
 	sigDataLen = Stream_Pointer(s) - sigData;
-	Stream_Write_UINT16(s, BB_RSA_SIGNATURE_BLOB); /* wSignatureBlobType */
+	Stream_Write_UINT16(s, BB_RSA_SIGNATURE_BLOB);          /* wSignatureBlobType */
 	Stream_Write_UINT16(s, sizeof(encryptedSignature) + 8); /* wSignatureBlobLen */
 	memcpy(signature, initial_signature, sizeof(initial_signature));
 
 	if (!winpr_Digest(WINPR_MD_MD5, sigData, sigDataLen, signature, sizeof(signature)))
 		return FALSE;
 
-	crypto_rsa_private_encrypt(signature, sizeof(signature), TSSK_KEY_LENGTH,
-	                           tssk_modulus, tssk_privateExponent, encryptedSignature);
+	crypto_rsa_private_encrypt(signature, sizeof(signature), TSSK_KEY_LENGTH, tssk_modulus,
+	                           tssk_privateExponent, encryptedSignature);
 	Stream_Write(s, encryptedSignature, sizeof(encryptedSignature));
 	Stream_Zero(s, 8);
 	return TRUE;
@@ -1553,17 +1675,19 @@ BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		 *   of seven ANSI characters that uniquely identify the channel.
 		 * - options: a 32-bit, unsigned integer. Channel option flags
 		 */
-		Stream_Read(s, mcs->channels[i].Name, 8); /* name (8 bytes) */
+		rdpMcsChannel* channel = &mcs->channels[i];
+		Stream_Read(s, channel->Name, CHANNEL_NAME_LEN + 1); /* name (8 bytes) */
 
-		if (!memchr(mcs->channels[i].Name, 0, 8))
+		if (!memchr(channel->Name, 0, CHANNEL_NAME_LEN + 1))
 		{
-			WLog_ERR(TAG,
-			         "protocol violation: received a static channel name with missing null-termination");
+			WLog_ERR(
+			    TAG,
+			    "protocol violation: received a static channel name with missing null-termination");
 			return FALSE;
 		}
 
-		Stream_Read_UINT32(s, mcs->channels[i].options); /* options (4 bytes) */
-		mcs->channels[i].ChannelId = mcs->baseChannelId++;
+		Stream_Read_UINT32(s, channel->options); /* options (4 bytes) */
+		channel->ChannelId = mcs->baseChannelId++;
 	}
 
 	return TRUE;
@@ -1576,7 +1700,7 @@ BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
  * @param settings rdp settings
  */
 
-void gcc_write_client_network_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_network_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
@@ -1584,17 +1708,20 @@ void gcc_write_client_network_data(wStream* s, rdpMcs* mcs)
 	if (mcs->channelCount > 0)
 	{
 		length = mcs->channelCount * 12 + 8;
-		gcc_write_user_data_header(s, CS_NET, length);
+		if (!gcc_write_user_data_header(s, CS_NET, length))
+			return FALSE;
 		Stream_Write_UINT32(s, mcs->channelCount); /* channelCount */
 
 		/* channelDefArray */
 		for (i = 0; i < mcs->channelCount; i++)
 		{
 			/* CHANNEL_DEF */
-			Stream_Write(s, mcs->channels[i].Name, 8); /* name (8 bytes) */
-			Stream_Write_UINT32(s, mcs->channels[i].options); /* options (4 bytes) */
+			rdpMcsChannel* channel = &mcs->channels[i];
+			Stream_Write(s, channel->Name, CHANNEL_NAME_LEN + 1); /* name (8 bytes) */
+			Stream_Write_UINT32(s, channel->options);             /* options (4 bytes) */
 		}
 	}
+	return TRUE;
 }
 
 BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
@@ -1614,8 +1741,8 @@ BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
 
 	if (channelCount != mcs->channelCount)
 	{
-		WLog_ERR(TAG,  "requested %"PRIu32" channels, got %"PRIu16" instead",
-		         mcs->channelCount, channelCount);
+		WLog_ERR(TAG, "requested %" PRIu32 " channels, got %" PRIu16 " instead", mcs->channelCount,
+		         channelCount);
 
 		/* we ensure that the response is not bigger than the request */
 
@@ -1623,13 +1750,14 @@ BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
 			parsedChannelCount = mcs->channelCount;
 	}
 
-	if (Stream_GetRemainingLength(s) < (size_t) channelCount * 2)
+	if (Stream_GetRemainingLength(s) / 2 < channelCount)
 		return FALSE;
 
 	for (i = 0; i < parsedChannelCount; i++)
 	{
+		rdpMcsChannel* channel = &mcs->channels[i];
 		Stream_Read_UINT16(s, channelId); /* channelId */
-		mcs->channels[i].ChannelId = channelId;
+		channel->ChannelId = channelId;
 	}
 
 	if (channelCount % 2 == 1)
@@ -1638,22 +1766,21 @@ BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
 	return TRUE;
 }
 
-BOOL gcc_write_server_network_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_server_network_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
-	int payloadLen = 8 + mcs->channelCount * 2 + (mcs->channelCount % 2 == 1 ? 2 :
-	                 0);
+	const size_t payloadLen = 8 + mcs->channelCount * 2 + (mcs->channelCount % 2 == 1 ? 2 : 0);
 
-	if (!Stream_EnsureRemainingCapacity(s, payloadLen + 4))
+	if (!gcc_write_user_data_header(s, SC_NET, payloadLen))
 		return FALSE;
 
-	gcc_write_user_data_header(s, SC_NET, payloadLen);
 	Stream_Write_UINT16(s, MCS_GLOBAL_CHANNEL_ID); /* MCSChannelId */
-	Stream_Write_UINT16(s, mcs->channelCount); /* channelCount */
+	Stream_Write_UINT16(s, mcs->channelCount);     /* channelCount */
 
 	for (i = 0; i < mcs->channelCount; i++)
 	{
-		Stream_Write_UINT16(s, mcs->channels[i].ChannelId);
+		const rdpMcsChannel* channel = &mcs->channels[i];
+		Stream_Write_UINT16(s, channel->ChannelId);
 	}
 
 	if (mcs->channelCount % 2 == 1)
@@ -1673,12 +1800,22 @@ BOOL gcc_read_client_cluster_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 flags;
 	UINT32 redirectedSessionId;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
 		return FALSE;
 
-	Stream_Read_UINT32(s, flags); /* flags */
+	Stream_Read_UINT32(s, flags);               /* flags */
 	Stream_Read_UINT32(s, redirectedSessionId); /* redirectedSessionId */
 
 	if (flags & REDIRECTED_SESSIONID_FIELD_VALID)
@@ -1703,18 +1840,34 @@ BOOL gcc_read_client_cluster_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
  * @param settings rdp settings
  */
 
-void gcc_write_client_cluster_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_cluster_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 flags;
-	rdpSettings* settings = mcs->settings;
-	gcc_write_user_data_header(s, CS_CLUSTER, 12);
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_user_data_header(s, CS_CLUSTER, 12))
+		return FALSE;
 	flags = REDIRECTION_SUPPORTED | (REDIRECTION_VERSION4 << 2);
 
 	if (settings->ConsoleSession || settings->RedirectedSessionId)
 		flags |= REDIRECTED_SESSIONID_FIELD_VALID;
 
-	Stream_Write_UINT32(s, flags); /* flags */
+	if (settings->RedirectSmartCards)
+		flags |= REDIRECTED_SMARTCARD;
+
+	Stream_Write_UINT32(s, flags);                         /* flags */
 	Stream_Write_UINT32(s, settings->RedirectedSessionId); /* redirectedSessionID */
+	return TRUE;
 }
 
 /**
@@ -1730,12 +1883,22 @@ BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	UINT32 flags;
 	UINT32 monitorCount;
 	UINT32 left, top, right, bottom;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
 		return FALSE;
 
-	Stream_Read_UINT32(s, flags); /* flags */
+	Stream_Read_UINT32(s, flags);        /* flags */
 	Stream_Read_UINT32(s, monitorCount); /* monitorCount */
 
 	/* 2.2.1.3.6 Client Monitor Data -
@@ -1744,29 +1907,29 @@ BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	 */
 	if (monitorCount > 16)
 	{
-		WLog_ERR(TAG, "announced monitors(%"PRIu32") exceed the 16 limit", monitorCount);
+		WLog_ERR(TAG, "announced monitors(%" PRIu32 ") exceed the 16 limit", monitorCount);
 		return FALSE;
 	}
 
 	if (monitorCount > settings->MonitorDefArraySize)
 	{
-		WLog_ERR(TAG, "too many announced monitors(%"PRIu32"), clamping to %"PRIu32"", monitorCount,
-		         settings->MonitorDefArraySize);
+		WLog_ERR(TAG, "too many announced monitors(%" PRIu32 "), clamping to %" PRIu32 "",
+		         monitorCount, settings->MonitorDefArraySize);
 		monitorCount = settings->MonitorDefArraySize;
 	}
 
-	if ((UINT32)((blockLength - 8)  / 20) < monitorCount)
+	if ((UINT32)((blockLength - 8) / 20) < monitorCount)
 		return FALSE;
 
 	settings->MonitorCount = monitorCount;
 
 	for (index = 0; index < monitorCount; index++)
 	{
-		Stream_Read_UINT32(s, left); /* left */
-		Stream_Read_UINT32(s, top); /* top */
-		Stream_Read_UINT32(s, right); /* right */
+		Stream_Read_UINT32(s, left);   /* left */
+		Stream_Read_UINT32(s, top);    /* top */
+		Stream_Read_UINT32(s, right);  /* right */
 		Stream_Read_UINT32(s, bottom); /* bottom */
-		Stream_Read_UINT32(s, flags); /* flags */
+		Stream_Read_UINT32(s, flags);  /* flags */
 		settings->MonitorDefArray[index].x = left;
 		settings->MonitorDefArray[index].y = top;
 		settings->MonitorDefArray[index].width = right - left + 1;
@@ -1784,19 +1947,30 @@ BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
  * @param settings rdp settings
  */
 
-void gcc_write_client_monitor_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
 	UINT32 left, top, right, bottom, flags;
 	INT32 baseX = 0, baseY = 0;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (settings->MonitorCount > 1)
 	{
 		length = (20 * settings->MonitorCount) + 12;
-		gcc_write_user_data_header(s, CS_MONITOR, length);
-		Stream_Write_UINT32(s, 0); /* flags */
+		if (!gcc_write_user_data_header(s, CS_MONITOR, length))
+			return FALSE;
+		Stream_Write_UINT32(s, 0);                      /* flags */
 		Stream_Write_UINT32(s, settings->MonitorCount); /* monitorCount */
 
 		/* first pass to get the primary monitor coordinates (it is supposed to be
@@ -1818,30 +1992,40 @@ void gcc_write_client_monitor_data(wStream* s, rdpMcs* mcs)
 			right = left + settings->MonitorDefArray[i].width - 1;
 			bottom = top + settings->MonitorDefArray[i].height - 1;
 			flags = settings->MonitorDefArray[i].is_primary ? MONITOR_PRIMARY : 0;
-			Stream_Write_UINT32(s, left); /* left */
-			Stream_Write_UINT32(s, top); /* top */
-			Stream_Write_UINT32(s, right); /* right */
+			Stream_Write_UINT32(s, left);   /* left */
+			Stream_Write_UINT32(s, top);    /* top */
+			Stream_Write_UINT32(s, right);  /* right */
 			Stream_Write_UINT32(s, bottom); /* bottom */
-			Stream_Write_UINT32(s, flags); /* flags */
+			Stream_Write_UINT32(s, flags);  /* flags */
 		}
 	}
+	return TRUE;
 }
 
-BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs,
-        UINT16 blockLength)
+BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 index;
 	UINT32 flags;
 	UINT32 monitorCount;
 	UINT32 monitorAttributeSize;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (blockLength < 12)
 		return FALSE;
 
-	Stream_Read_UINT32(s, flags); /* flags */
+	Stream_Read_UINT32(s, flags);                /* flags */
 	Stream_Read_UINT32(s, monitorAttributeSize); /* monitorAttributeSize */
-	Stream_Read_UINT32(s, monitorCount); /* monitorCount */
+	Stream_Read_UINT32(s, monitorCount);         /* monitorCount */
 
 	if (monitorAttributeSize != 20)
 		return FALSE;
@@ -1856,49 +2040,63 @@ BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs,
 
 	for (index = 0; index < monitorCount; index++)
 	{
-		Stream_Read_UINT32(s,
-		                   settings->MonitorDefArray[index].attributes.physicalWidth); /* physicalWidth */
-		Stream_Read_UINT32(s,
-		                   settings->MonitorDefArray[index].attributes.physicalHeight); /* physicalHeight */
-		Stream_Read_UINT32(s,
-		                   settings->MonitorDefArray[index].attributes.orientation); /* orientation */
-		Stream_Read_UINT32(s,
-		                   settings->MonitorDefArray[index].attributes.desktopScaleFactor); /* desktopScaleFactor */
-		Stream_Read_UINT32(s,
-		                   settings->MonitorDefArray[index].attributes.deviceScaleFactor); /* deviceScaleFactor */
+		Stream_Read_UINT32(
+		    s, settings->MonitorDefArray[index].attributes.physicalWidth); /* physicalWidth */
+		Stream_Read_UINT32(
+		    s, settings->MonitorDefArray[index].attributes.physicalHeight); /* physicalHeight */
+		Stream_Read_UINT32(
+		    s, settings->MonitorDefArray[index].attributes.orientation); /* orientation */
+		Stream_Read_UINT32(s, settings->MonitorDefArray[index]
+		                          .attributes.desktopScaleFactor); /* desktopScaleFactor */
+		Stream_Read_UINT32(
+		    s,
+		    settings->MonitorDefArray[index].attributes.deviceScaleFactor); /* deviceScaleFactor */
 	}
 
 	return TRUE;
 }
 
-void gcc_write_client_monitor_extended_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_monitor_extended_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	if (settings->HasMonitorAttributes)
 	{
 		length = (20 * settings->MonitorCount) + 16;
-		gcc_write_user_data_header(s, CS_MONITOR_EX, length);
-		Stream_Write_UINT32(s, 0); /* flags */
-		Stream_Write_UINT32(s, 20); /* monitorAttributeSize */
+		if (!gcc_write_user_data_header(s, CS_MONITOR_EX, length))
+			return FALSE;
+		Stream_Write_UINT32(s, 0);                      /* flags */
+		Stream_Write_UINT32(s, 20);                     /* monitorAttributeSize */
 		Stream_Write_UINT32(s, settings->MonitorCount); /* monitorCount */
 
 		for (i = 0; i < settings->MonitorCount; i++)
 		{
-			Stream_Write_UINT32(s,
-			                    settings->MonitorDefArray[i].attributes.physicalWidth); /* physicalWidth */
-			Stream_Write_UINT32(s,
-			                    settings->MonitorDefArray[i].attributes.physicalHeight); /* physicalHeight */
-			Stream_Write_UINT32(s,
-			                    settings->MonitorDefArray[i].attributes.orientation); /* orientation */
-			Stream_Write_UINT32(s,
-			                    settings->MonitorDefArray[i].attributes.desktopScaleFactor); /* desktopScaleFactor */
-			Stream_Write_UINT32(s,
-			                    settings->MonitorDefArray[i].attributes.deviceScaleFactor); /* deviceScaleFactor */
+			Stream_Write_UINT32(
+			    s, settings->MonitorDefArray[i].attributes.physicalWidth); /* physicalWidth */
+			Stream_Write_UINT32(
+			    s, settings->MonitorDefArray[i].attributes.physicalHeight); /* physicalHeight */
+			Stream_Write_UINT32(
+			    s, settings->MonitorDefArray[i].attributes.orientation); /* orientation */
+			Stream_Write_UINT32(s, settings->MonitorDefArray[i]
+			                           .attributes.desktopScaleFactor); /* desktopScaleFactor */
+			Stream_Write_UINT32(
+			    s,
+			    settings->MonitorDefArray[i].attributes.deviceScaleFactor); /* deviceScaleFactor */
 		}
 	}
+	return TRUE;
 }
 
 /**
@@ -1908,8 +2106,7 @@ void gcc_write_client_monitor_extended_data(wStream* s, rdpMcs* mcs)
  * @param settings rdp settings
  */
 
-BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs,
-        UINT16 blockLength)
+BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 flags;
 
@@ -1928,17 +2125,28 @@ BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs,
  * @param settings rdp settings
  */
 
-void gcc_write_client_message_channel_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_message_channel_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
 
-	if (settings->NetworkAutoDetect ||
-	    settings->SupportHeartbeatPdu ||
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (settings->NetworkAutoDetect || settings->SupportHeartbeatPdu ||
 	    settings->SupportMultitransport)
 	{
-		gcc_write_user_data_header(s, CS_MCS_MSGCHANNEL, 8);
+		if (!gcc_write_user_data_header(s, CS_MCS_MSGCHANNEL, 8))
+			return FALSE;
 		Stream_Write_UINT32(s, 0); /* flags */
 	}
+	return TRUE;
 }
 
 BOOL gcc_read_server_message_channel_data(wStream* s, rdpMcs* mcs)
@@ -1954,15 +2162,14 @@ BOOL gcc_read_server_message_channel_data(wStream* s, rdpMcs* mcs)
 	return TRUE;
 }
 
-BOOL gcc_write_server_message_channel_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_server_message_channel_data(wStream* s, const rdpMcs* mcs)
 {
 	if (mcs->messageChannelId == 0)
 		return TRUE;
 
-	if (!Stream_EnsureRemainingCapacity(s, 2 + 4))
+	if (!gcc_write_user_data_header(s, SC_MCS_MSGCHANNEL, 6))
 		return FALSE;
 
-	gcc_write_user_data_header(s, SC_MCS_MSGCHANNEL, 6);
 	Stream_Write_UINT16(s, mcs->messageChannelId); /* mcsChannelId (2 bytes) */
 	return TRUE;
 }
@@ -1974,8 +2181,7 @@ BOOL gcc_write_server_message_channel_data(wStream* s, rdpMcs* mcs)
  * @param settings rdp settings
  */
 
-BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs,
-        UINT16 blockLength)
+BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 flags;
 
@@ -1993,15 +2199,24 @@ BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs,
  * @param settings rdp settings
  */
 
-void gcc_write_client_multitransport_channel_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_client_multitransport_channel_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpSettings* settings = mcs->settings;
+	rdpContext* context;
+	rdpSettings* settings;
 
-	if (settings->MultitransportFlags != 0)
-	{
-		gcc_write_user_data_header(s, CS_MULTITRANSPORT, 8);
-		Stream_Write_UINT32(s, settings->MultitransportFlags); /* flags */
-	}
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
+
+	if (!gcc_write_user_data_header(s, CS_MULTITRANSPORT, 8))
+		return FALSE;
+	Stream_Write_UINT32(s, settings->MultitransportFlags); /* flags */
+	return TRUE;
 }
 
 BOOL gcc_read_server_multitransport_channel_data(wStream* s, rdpMcs* mcs)
@@ -2015,9 +2230,11 @@ BOOL gcc_read_server_multitransport_channel_data(wStream* s, rdpMcs* mcs)
 	return TRUE;
 }
 
-void gcc_write_server_multitransport_channel_data(wStream* s, rdpMcs* mcs)
+BOOL gcc_write_server_multitransport_channel_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 flags = 0;
-	gcc_write_user_data_header(s, SC_MULTITRANSPORT, 8);
+	if (!gcc_write_user_data_header(s, SC_MULTITRANSPORT, 8))
+		return FALSE;
 	Stream_Write_UINT32(s, flags); /* flags (4 bytes) */
+	return TRUE;
 }
