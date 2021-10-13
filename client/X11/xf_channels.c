@@ -28,7 +28,9 @@
 #include "xfreerdp.h"
 
 #include "xf_gfx.h"
+#if defined(CHANNEL_TSMF_CLIENT)
 #include "xf_tsmf.h"
+#endif
 #include "xf_rail.h"
 #include "xf_cliprdr.h"
 #include "xf_disp.h"
@@ -36,32 +38,33 @@
 
 void xf_OnChannelConnectedEventHandler(void* context, ChannelConnectedEventArgs* e)
 {
-	xfContext* xfc = (xfContext*) context;
-	rdpSettings* settings = xfc->context.settings;
+	xfContext* xfc = (xfContext*)context;
 
 	if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
 	{
-		xfc->rdpei = (RdpeiClientContext*) e->pInterface;
+		xfc->rdpei = (RdpeiClientContext*)e->pInterface;
 	}
+#if defined(CHANNEL_TSMF_CLIENT)
 	else if (strcmp(e->name, TSMF_DVC_CHANNEL_NAME) == 0)
 	{
-		xf_tsmf_init(xfc, (TsmfClientContext*) e->pInterface);
+		xf_tsmf_init(xfc, (TsmfClientContext*)e->pInterface);
 	}
+#endif
 	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
 	{
-		xf_graphics_pipeline_init(xfc, (RdpgfxClientContext*) e->pInterface);
+		xf_graphics_pipeline_init(xfc, (RdpgfxClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, RAIL_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_rail_init(xfc, (RailClientContext*) e->pInterface);
+		xf_rail_init(xfc, (RailClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_cliprdr_init(xfc, (CliprdrClientContext*) e->pInterface);
+		xf_cliprdr_init(xfc, (CliprdrClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, ENCOMSP_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_encomsp_init(xfc, (EncomspClientContext*) e->pInterface);
+		xf_encomsp_init(xfc, (EncomspClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
@@ -83,7 +86,7 @@ void xf_OnChannelConnectedEventHandler(void* context, ChannelConnectedEventArgs*
 
 void xf_OnChannelDisconnectedEventHandler(void* context, ChannelDisconnectedEventArgs* e)
 {
-	xfContext* xfc = (xfContext*) context;
+	xfContext* xfc = (xfContext*)context;
 	rdpSettings* settings = xfc->context.settings;
 
 	if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
@@ -94,25 +97,27 @@ void xf_OnChannelDisconnectedEventHandler(void* context, ChannelDisconnectedEven
 	{
 		xf_disp_uninit(xfc->xfDisp, (DispClientContext*)e->pInterface);
 	}
+#if defined(CHANNEL_TSMF_CLIENT)
 	else if (strcmp(e->name, TSMF_DVC_CHANNEL_NAME) == 0)
 	{
-		xf_tsmf_uninit(xfc, (TsmfClientContext*) e->pInterface);
+		xf_tsmf_uninit(xfc, (TsmfClientContext*)e->pInterface);
 	}
+#endif
 	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
 	{
-		xf_graphics_pipeline_uninit(xfc, (RdpgfxClientContext*) e->pInterface);
+		xf_graphics_pipeline_uninit(xfc, (RdpgfxClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, RAIL_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_rail_uninit(xfc, (RailClientContext*) e->pInterface);
+		xf_rail_uninit(xfc, (RailClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_cliprdr_uninit(xfc, (CliprdrClientContext*) e->pInterface);
+		xf_cliprdr_uninit(xfc, (CliprdrClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, ENCOMSP_SVC_CHANNEL_NAME) == 0)
 	{
-		xf_encomsp_uninit(xfc, (EncomspClientContext*) e->pInterface);
+		xf_encomsp_uninit(xfc, (EncomspClientContext*)e->pInterface);
 	}
 	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
 	{

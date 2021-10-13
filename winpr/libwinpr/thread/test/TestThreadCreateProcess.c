@@ -32,6 +32,9 @@ int TestThreadCreateProcess(int argc, char* argv[])
 	int ret = 0;
 	SECURITY_ATTRIBUTES saAttr;
 
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	lpszEnvironmentBlock = GetEnvironmentStrings();
 
 	lpApplicationName = NULL;
@@ -55,39 +58,31 @@ int TestThreadCreateProcess(int argc, char* argv[])
 	StartupInfo.cb = sizeof(STARTUPINFO);
 	ZeroMemory(&ProcessInformation, sizeof(PROCESS_INFORMATION));
 
-	status = CreateProcess(lpApplicationName,
-			lpCommandLine,
-			lpProcessAttributes,
-			lpThreadAttributes,
-			bInheritHandles,
-			dwCreationFlags,
-			lpEnvironment,
-			lpCurrentDirectory,
-			&StartupInfo,
-			&ProcessInformation);
+	status = CreateProcess(lpApplicationName, lpCommandLine, lpProcessAttributes,
+	                       lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment,
+	                       lpCurrentDirectory, &StartupInfo, &ProcessInformation);
 
 	if (!status)
 	{
-		printf("CreateProcess failed. error=%"PRIu32"\n", GetLastError());
+		printf("CreateProcess failed. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 
 	if (WaitForSingleObject(ProcessInformation.hProcess, 5000) != WAIT_OBJECT_0)
 	{
-		printf("Failed to wait for first process. error=%"PRIu32"\n", GetLastError());
+		printf("Failed to wait for first process. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 
 	exitCode = 0;
 	status = GetExitCodeProcess(ProcessInformation.hProcess, &exitCode);
 
-	printf("GetExitCodeProcess status: %"PRId32"\n", status);
-	printf("Process exited with code: 0x%08"PRIX32"\n", exitCode);
+	printf("GetExitCodeProcess status: %" PRId32 "\n", status);
+	printf("Process exited with code: 0x%08" PRIX32 "\n", exitCode);
 
 	CloseHandle(ProcessInformation.hProcess);
 	CloseHandle(ProcessInformation.hThread);
 	FreeEnvironmentStrings(lpszEnvironmentBlock);
-
 
 	/* Test stdin,stdout,stderr redirection */
 
@@ -97,7 +92,7 @@ int TestThreadCreateProcess(int argc, char* argv[])
 
 	if (!CreatePipe(&pipe_read, &pipe_write, &saAttr, 0))
 	{
-		printf("Pipe creation failed. error=%"PRIu32"\n", GetLastError());
+		printf("Pipe creation failed. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 
@@ -113,22 +108,14 @@ int TestThreadCreateProcess(int argc, char* argv[])
 
 	if (!(lpEnvironment = calloc(1, sizeof(TESTENV_T) + sizeof(TCHAR))))
 	{
-		printf("Failed to allocate environment buffer. error=%"PRIu32"\n", GetLastError());
+		printf("Failed to allocate environment buffer. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 	memcpy(lpEnvironment, (void*)TESTENV_T, sizeof(TESTENV_T));
 
-
-	status = CreateProcess(lpApplicationName,
-						   lpCommandLine,
-						   lpProcessAttributes,
-						   lpThreadAttributes,
-						   bInheritHandles,
-						   dwCreationFlags,
-						   lpEnvironment,
-						   lpCurrentDirectory,
-						   &StartupInfo,
-						   &ProcessInformation);
+	status = CreateProcess(lpApplicationName, lpCommandLine, lpProcessAttributes,
+	                       lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment,
+	                       lpCurrentDirectory, &StartupInfo, &ProcessInformation);
 
 	free(lpEnvironment);
 
@@ -136,18 +123,18 @@ int TestThreadCreateProcess(int argc, char* argv[])
 	{
 		CloseHandle(pipe_read);
 		CloseHandle(pipe_write);
-		printf("CreateProcess failed. error=%"PRIu32"\n", GetLastError());
+		printf("CreateProcess failed. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 
 	if (WaitForSingleObject(ProcessInformation.hProcess, 5000) != WAIT_OBJECT_0)
 	{
-		printf("Failed to wait for second process. error=%"PRIu32"\n", GetLastError());
+		printf("Failed to wait for second process. error=%" PRIu32 "\n", GetLastError());
 		return 1;
 	}
 
 	ZeroMemory(buf, sizeof(buf));
-	ReadFile(pipe_read, buf, sizeof(buf)-1, &read_bytes, NULL);
+	ReadFile(pipe_read, buf, sizeof(buf) - 1, &read_bytes, NULL);
 	if (!strstr((const char*)buf, TESTENV_A))
 	{
 		printf("No or unexpected data read from pipe\n");
@@ -160,12 +147,11 @@ int TestThreadCreateProcess(int argc, char* argv[])
 	exitCode = 0;
 	status = GetExitCodeProcess(ProcessInformation.hProcess, &exitCode);
 
-	printf("GetExitCodeProcess status: %"PRId32"\n", status);
-	printf("Process exited with code: 0x%08"PRIX32"\n", exitCode);
+	printf("GetExitCodeProcess status: %" PRId32 "\n", status);
+	printf("Process exited with code: 0x%08" PRIX32 "\n", exitCode);
 
 	CloseHandle(ProcessInformation.hProcess);
 	CloseHandle(ProcessInformation.hThread);
 
 	return ret;
 }
-

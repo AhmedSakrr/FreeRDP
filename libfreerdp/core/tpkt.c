@@ -25,6 +25,10 @@
 
 #include "tpkt.h"
 
+#include <winpr/wlog.h>
+
+#define TAG FREERDP_TAG("core.tpkt")
+
 /**
  * TPKTs are defined in:
  *
@@ -93,15 +97,27 @@ BOOL tpkt_read_header(wStream* s, UINT16* length)
 
 	if (version == 3)
 	{
+		size_t slen;
 		UINT16 len;
 		if (Stream_GetRemainingLength(s) < 4)
 			return FALSE;
 
 		Stream_Seek(s, 2);
 		Stream_Read_UINT16_BE(s, len);
-		if (len < 4)
-			return FALSE;
 
+		/* ITU-T Rec. T.123 8 Packet header to delimit data units in an octet stream */
+		if (len < 7)
+		{
+			WLog_ERR(TAG, "TPKT header too short, require minimum of 7 bytes, got %" PRId16, len);
+			return FALSE;
+		}
+
+		slen = Stream_GetRemainingLength(s) + 4;
+		if (len > slen)
+		{
+			WLog_ERR(TAG, "TPKT header length %" PRIu16 ", but only received %" PRIdz, len, slen);
+			return FALSE;
+		}
 		*length = len;
 	}
 	else
@@ -113,15 +129,31 @@ BOOL tpkt_read_header(wStream* s, UINT16* length)
 	return TRUE;
 }
 
+BOOL tpkt_ensure_stream_consumed_(wStream* s, UINT16 length, const char* fkt)
+{
+	size_t rem = Stream_GetRemainingLength(s);
+	if (rem > 0)
+	{
+		WLog_ERR(TAG,
+		         "[%s] Received invalid TPKT header length %" PRIu16 ", %" PRIdz " bytes too long!",
+		         fkt, length, rem);
+		return FALSE;
+	}
+	return TRUE;
+}
+
 /**
  * Write a TPKT header.\n
  * @param s
  * @param length
  */
 
-void tpkt_write_header(wStream* s, UINT16 length)
+BOOL tpkt_write_header(wStream* s, UINT16 length)
 {
-	Stream_Write_UINT8(s, 3); /* version */
-	Stream_Write_UINT8(s, 0); /* reserved */
+	if (Stream_GetRemainingCapacity(s) < 4)
+		return FALSE;
+	Stream_Write_UINT8(s, 3);          /* version */
+	Stream_Write_UINT8(s, 0);          /* reserved */
 	Stream_Write_UINT16_BE(s, length); /* length */
+	return TRUE;
 }

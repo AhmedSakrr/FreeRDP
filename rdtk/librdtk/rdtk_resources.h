@@ -19,19 +19,20 @@
 #ifndef RDTK_RESOURCES_PRIVATE_H
 #define RDTK_RESOURCES_PRIVATE_H
 
+#include <stdint.h>
 #include <rdtk/rdtk.h>
 
 #include "rdtk_engine.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int rdtk_get_embedded_resource_file(const char* filename, BYTE** pData);
+	SSIZE_T rdtk_get_embedded_resource_file(const char* filename, const uint8_t** pData);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* RDTK_RESOURCES_PRIVATE_H */
-

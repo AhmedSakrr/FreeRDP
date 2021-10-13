@@ -22,20 +22,18 @@
 #include "config.h"
 #endif
 
-
 #include <winpr/crt.h>
 #include <winpr/environment.h>
 #include <winpr/winsock.h>
 
 #include "wlog.h"
 
-
 struct _wLogUdpAppender
 {
 	WLOG_APPENDER_COMMON();
 	char* host;
 	struct sockaddr targetAddr;
-	int	targetAddrLen;
+	int targetAddrLen;
 	SOCKET sock;
 };
 typedef struct _wLogUdpAppender wLogUdpAppender;
@@ -46,7 +44,8 @@ static BOOL WLog_UdpAppender_Open(wLog* log, wLogAppender* appender)
 	char addressString[256];
 	struct addrinfo hints;
 	struct addrinfo* result;
-	int status, addrLen;
+	int status;
+	size_t addrLen;
 	char* colonPos;
 
 	if (!appender)
@@ -62,7 +61,7 @@ static BOOL WLog_UdpAppender_Open(wLog* log, wLogAppender* appender)
 	if (!colonPos)
 		return FALSE;
 
-	addrLen = (int)(colonPos - udpAppender->host);
+	addrLen = (colonPos - udpAppender->host);
 	memcpy(addressString, udpAppender->host, addrLen);
 	addressString[addrLen] = '\0';
 	ZeroMemory(&hints, sizeof(hints));
@@ -80,7 +79,7 @@ static BOOL WLog_UdpAppender_Open(wLog* log, wLogAppender* appender)
 	}
 
 	memcpy(&udpAppender->targetAddr, result->ai_addr, result->ai_addrlen);
-	udpAppender->targetAddrLen = (int) result->ai_addrlen;
+	udpAppender->targetAddrLen = (int)result->ai_addrlen;
 	freeaddrinfo(result);
 	return TRUE;
 }
@@ -104,16 +103,16 @@ static BOOL WLog_UdpAppender_WriteMessage(wLog* log, wLogAppender* appender, wLo
 	udpAppender = (wLogUdpAppender*)appender;
 	message->PrefixString = prefix;
 	WLog_Layout_GetMessagePrefix(log, appender->Layout, message);
-	_sendto(udpAppender->sock, message->PrefixString, strlen(message->PrefixString),
+	_sendto(udpAppender->sock, message->PrefixString, (int)strnlen(message->PrefixString, INT_MAX),
 	        0, &udpAppender->targetAddr, udpAppender->targetAddrLen);
-	_sendto(udpAppender->sock, message->TextString, strlen(message->TextString),
-	        0, &udpAppender->targetAddr, udpAppender->targetAddrLen);
+	_sendto(udpAppender->sock, message->TextString, (int)strnlen(message->TextString, INT_MAX), 0,
+	        &udpAppender->targetAddr, udpAppender->targetAddrLen);
 	_sendto(udpAppender->sock, "\n", 1, 0, &udpAppender->targetAddr, udpAppender->targetAddrLen);
 	return TRUE;
 }
 
 static BOOL WLog_UdpAppender_WriteDataMessage(wLog* log, wLogAppender* appender,
-        wLogMessage* message)
+                                              wLogMessage* message)
 {
 	if (!log || !appender || !message)
 		return FALSE;
@@ -122,7 +121,7 @@ static BOOL WLog_UdpAppender_WriteDataMessage(wLog* log, wLogAppender* appender,
 }
 
 static BOOL WLog_UdpAppender_WriteImageMessage(wLog* log, wLogAppender* appender,
-        wLogMessage* message)
+                                               wLogMessage* message)
 {
 	if (!log || !appender || !message)
 		return FALSE;
@@ -132,12 +131,14 @@ static BOOL WLog_UdpAppender_WriteImageMessage(wLog* log, wLogAppender* appender
 
 static BOOL WLog_UdpAppender_Set(wLogAppender* appender, const char* setting, void* value)
 {
+	const char target[] = "target";
 	wLogUdpAppender* udpAppender = (wLogUdpAppender*)appender;
 
-	if (!value || !strlen(value))
+	/* Just check the value string is not empty */
+	if (!value || (strnlen(value, 2) == 0))
 		return FALSE;
 
-	if (strcmp("target", setting))
+	if (strncmp(target, setting, sizeof(target)))
 		return FALSE;
 
 	udpAppender->targetAddrLen = 0;
@@ -173,7 +174,7 @@ wLogAppender* WLog_UdpAppender_New(wLog* log)
 	wLogUdpAppender* appender;
 	DWORD nSize;
 	LPCSTR name;
-	appender = (wLogUdpAppender*) calloc(1, sizeof(wLogUdpAppender));
+	appender = (wLogUdpAppender*)calloc(1, sizeof(wLogUdpAppender));
 
 	if (!appender)
 		return NULL;
@@ -196,7 +197,7 @@ wLogAppender* WLog_UdpAppender_New(wLog* log)
 
 	if (nSize)
 	{
-		appender->host = (LPSTR) malloc(nSize);
+		appender->host = (LPSTR)malloc(nSize);
 
 		if (!appender->host)
 			goto error_open;

@@ -27,11 +27,11 @@
 #include <winpr/print.h>
 #include <winpr/stream.h>
 #include <freerdp/channels/log.h>
+#include <freerdp/channels/drdynvc.h>
 
 #include "drdynvc_main.h"
 
 #define TAG CHANNELS_TAG("drdynvc.server")
-
 
 static DWORD WINAPI drdynvc_server_thread(LPVOID arg)
 {
@@ -121,8 +121,8 @@ static DWORD WINAPI drdynvc_server_thread(LPVOID arg)
  */
 static UINT drdynvc_server_start(DrdynvcServerContext* context)
 {
-	context->priv->ChannelHandle = WTSVirtualChannelOpen(context->vcm,
-	                               WTS_CURRENT_SESSION, "drdynvc");
+	context->priv->ChannelHandle =
+	    WTSVirtualChannelOpen(context->vcm, WTS_CURRENT_SESSION, DRDYNVC_SVC_CHANNEL_NAME);
 
 	if (!context->priv->ChannelHandle)
 	{
@@ -136,7 +136,8 @@ static UINT drdynvc_server_start(DrdynvcServerContext* context)
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	if (!(context->priv->Thread = CreateThread(NULL, 0, drdynvc_server_thread, (void*) context, 0, NULL)))
+	if (!(context->priv->Thread =
+	          CreateThread(NULL, 0, drdynvc_server_thread, (void*)context, 0, NULL)))
 	{
 		WLog_ERR(TAG, "CreateThread failed!");
 		CloseHandle(context->priv->StopEvent);
@@ -160,7 +161,7 @@ static UINT drdynvc_server_stop(DrdynvcServerContext* context)
 	if (WaitForSingleObject(context->priv->Thread, INFINITE) == WAIT_FAILED)
 	{
 		error = GetLastError();
-		WLog_ERR(TAG, "WaitForSingleObject failed with error %"PRIu32"!", error);
+		WLog_ERR(TAG, "WaitForSingleObject failed with error %" PRIu32 "!", error);
 		return error;
 	}
 
@@ -171,14 +172,14 @@ static UINT drdynvc_server_stop(DrdynvcServerContext* context)
 DrdynvcServerContext* drdynvc_server_context_new(HANDLE vcm)
 {
 	DrdynvcServerContext* context;
-	context = (DrdynvcServerContext*) calloc(1, sizeof(DrdynvcServerContext));
+	context = (DrdynvcServerContext*)calloc(1, sizeof(DrdynvcServerContext));
 
 	if (context)
 	{
 		context->vcm = vcm;
 		context->Start = drdynvc_server_start;
 		context->Stop = drdynvc_server_stop;
-		context->priv = (DrdynvcServerPrivate*) calloc(1, sizeof(DrdynvcServerPrivate));
+		context->priv = (DrdynvcServerPrivate*)calloc(1, sizeof(DrdynvcServerPrivate));
 
 		if (!context->priv)
 		{

@@ -22,13 +22,29 @@
 #ifndef FREERDP_CLIENT_X11_FREERDP_H
 #define FREERDP_CLIENT_X11_FREERDP_H
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 typedef struct xf_context xfContext;
+
+#ifdef WITH_XCURSOR
+#include <X11/Xcursor/Xcursor.h>
+#endif
+
+#ifdef WITH_XI
+#include <X11/extensions/XInput2.h>
+#endif
 
 #include <freerdp/api.h>
 
 #include "xf_window.h"
 #include "xf_monitor.h"
 #include "xf_channels.h"
+
+#if defined(CHANNEL_TSMF_CLIENT)
+#include <freerdp/client/tsmf.h>
+#endif
 
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/codec/rfx.h>
@@ -39,6 +55,14 @@ typedef struct xf_context xfContext;
 #include <freerdp/codec/h264.h>
 #include <freerdp/codec/progressive.h>
 #include <freerdp/codec/region.h>
+
+#if !defined(XcursorUInt)
+typedef unsigned int XcursorUInt;
+#endif
+
+#if !defined(XcursorPixel)
+typedef XcursorUInt XcursorPixel;
+#endif
 
 struct xf_FullscreenMonitors
 {
@@ -61,6 +85,12 @@ typedef struct xf_WorkArea xfWorkArea;
 struct xf_pointer
 {
 	rdpPointer pointer;
+	XcursorPixel* cursorPixels;
+	UINT32 nCursors;
+	UINT32 mCursors;
+	UINT32* cursorWidths;
+	UINT32* cursorHeights;
+	Cursor* cursors;
 	Cursor cursor;
 };
 typedef struct xf_pointer xfPointer;
@@ -93,6 +123,21 @@ typedef struct
 	int button;
 	UINT16 flags;
 } button_map;
+
+#if defined(WITH_XI)
+#define MAX_CONTACTS 20
+
+typedef struct touch_contact
+{
+	int id;
+	int count;
+	double pos_x;
+	double pos_y;
+	double last_x;
+	double last_y;
+
+} touchContact;
+#endif
 
 struct xf_context
 {
@@ -173,12 +218,16 @@ struct xf_context
 	XSetWindowAttributes attribs;
 	BOOL complex_regions;
 	VIRTUAL_SCREEN vscreen;
+#if defined(CHANNEL_TSMF_CLIENT)
 	void* xv_context;
+#endif
 
 	Atom* supportedAtoms;
 	unsigned long supportedAtomCount;
 
 	Atom UTF8_STRING;
+
+	Atom _XWAYLAND_MAY_GRAB_KEYBOARD;
 
 	Atom _NET_WM_ICON;
 	Atom _MOTIF_WM_HINTS;
@@ -216,7 +265,10 @@ struct xf_context
 	Atom WM_DELETE_WINDOW;
 
 	/* Channels */
+#if defined(CHANNEL_TSMF_CLIENT)
 	TsmfClientContext* tsmf;
+#endif
+
 	xfClipboard* clipboard;
 	CliprdrClientContext* cliprdr;
 	xfVideoContext* xfVideo;
@@ -234,11 +286,26 @@ struct xf_context
 	/* value to be sent over wire for each logical client mouse button */
 	button_map button_map[NUM_BUTTONS_MAPPED];
 	BYTE savedMaximizedState;
+	UINT32 locked;
+	BOOL firstPressRightCtrl;
+	BOOL ungrabKeyboardWithRightCtrl;
+
+#if defined(WITH_XI)
+	touchContact contacts[MAX_CONTACTS];
+	int active_contacts;
+	int lastEvType;
+	XIDeviceEvent lastEvent;
+	double firstDist;
+	double lastDist;
+	double z_vector;
+	double px_vector;
+	double py_vector;
+#endif
 };
 
 BOOL xf_create_window(xfContext* xfc);
 void xf_toggle_fullscreen(xfContext* xfc);
-void xf_toggle_control(xfContext* xfc);
+BOOL xf_toggle_control(xfContext* xfc);
 
 void xf_encomsp_init(xfContext* xfc, EncomspClientContext* encomsp);
 void xf_encomsp_uninit(xfContext* xfc, EncomspClientContext* encomsp);
@@ -282,17 +349,49 @@ enum XF_EXIT_CODE
 	XF_EXIT_CONN_FAILED = 131,
 	XF_EXIT_AUTH_FAILURE = 132,
 	XF_EXIT_NEGO_FAILURE = 133,
+	XF_EXIT_LOGON_FAILURE = 134,
+	XF_EXIT_ACCOUNT_LOCKED_OUT = 135,
+	XF_EXIT_PRE_CONNECT_FAILED = 136,
+	XF_EXIT_CONNECT_UNDEFINED = 137,
+	XF_EXIT_POST_CONNECT_FAILED = 138,
+	XF_EXIT_DNS_ERROR = 139,
+	XF_EXIT_DNS_NAME_NOT_FOUND = 140,
+	XF_EXIT_CONNECT_FAILED = 141,
+	XF_EXIT_MCS_CONNECT_INITIAL_ERROR = 142,
+	XF_EXIT_TLS_CONNECT_FAILED = 143,
+	XF_EXIT_INSUFFICIENT_PRIVILEGES = 144,
+	XF_EXIT_CONNECT_CANCELLED = 145,
+	XF_EXIT_SECURITY_NEGO_CONNECT_FAILED = 146,
+	XF_EXIT_CONNECT_TRANSPORT_FAILED = 147,
+	XF_EXIT_CONNECT_PASSWORD_EXPIRED = 148,
+	XF_EXIT_CONNECT_PASSWORD_MUST_CHANGE = 149,
+	XF_EXIT_CONNECT_KDC_UNREACHABLE = 150,
+	XF_EXIT_CONNECT_ACCOUNT_DISABLED = 151,
+	XF_EXIT_CONNECT_PASSWORD_CERTAINLY_EXPIRED = 152,
+	XF_EXIT_CONNECT_CLIENT_REVOKED = 153,
+	XF_EXIT_CONNECT_WRONG_PASSWORD = 154,
+	XF_EXIT_CONNECT_ACCESS_DENIED = 155,
+	XF_EXIT_CONNECT_ACCOUNT_RESTRICTION = 156,
+	XF_EXIT_CONNECT_ACCOUNT_EXPIRED = 157,
+	XF_EXIT_CONNECT_LOGON_TYPE_NOT_GRANTED = 158,
+	XF_EXIT_CONNECT_NO_OR_MISSING_CREDENTIALS = 159,
 
 	XF_EXIT_UNKNOWN = 255,
 };
 
-void xf_lock_x11(xfContext* xfc, BOOL display);
-void xf_unlock_x11(xfContext* xfc, BOOL display);
+#define xf_lock_x11(xfc) xf_lock_x11_(xfc, __FUNCTION__)
+#define xf_unlock_x11(xfc) xf_unlock_x11_(xfc, __FUNCTION__)
+
+void xf_lock_x11_(xfContext* xfc, const char* fkt);
+void xf_unlock_x11_(xfContext* xfc, const char* fkt);
 
 BOOL xf_picture_transform_required(xfContext* xfc);
-void xf_draw_screen(xfContext* xfc, int x, int y, int w, int h);
+
+#define xf_draw_screen(_xfc, _x, _y, _w, _h) \
+	xf_draw_screen_((_xfc), (_x), (_y), (_w), (_h), __FUNCTION__, __FILE__, __LINE__)
+void xf_draw_screen_(xfContext* xfc, int x, int y, int w, int h, const char* fkt, const char* file,
+                     int line);
 
 FREERDP_API DWORD xf_exit_code_from_disconnect_reason(DWORD reason);
 
 #endif /* FREERDP_CLIENT_X11_FREERDP_H */
-

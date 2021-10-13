@@ -30,33 +30,34 @@
 
 #define TAG FREERDP_TAG("codec")
 
-#define UNROLL_BODY(_exp, _count) do \
-	{ \
-		size_t x; \
-		for (x=0; x<(_count); x++) \
-		{ \
-			do _exp while(FALSE); \
-		} \
-	} \
-	while (FALSE)
+#define UNROLL_BODY(_exp, _count)      \
+	do                                 \
+	{                                  \
+		size_t x;                      \
+		for (x = 0; x < (_count); x++) \
+		{                              \
+			do                         \
+				_exp while (FALSE);    \
+		}                              \
+	} while (FALSE)
 
-#define UNROLL_MULTIPLE(_condition, _exp, _count) do \
-	{ \
-		while ((_condition) >= _count) \
-		{ \
-			UNROLL_BODY(_exp, _count); \
-			(_condition) -= _count; \
-		} \
-	} \
-	while (FALSE)
+#define UNROLL_MULTIPLE(_condition, _exp, _count) \
+	do                                            \
+	{                                             \
+		while ((_condition) >= _count)            \
+		{                                         \
+			UNROLL_BODY(_exp, _count);            \
+			(_condition) -= _count;               \
+		}                                         \
+	} while (FALSE)
 
-#define UNROLL(_condition, _exp) do \
-	{ \
+#define UNROLL(_condition, _exp)               \
+	do                                         \
+	{                                          \
 		UNROLL_MULTIPLE(_condition, _exp, 16); \
-		UNROLL_MULTIPLE(_condition, _exp, 4); \
-		UNROLL_MULTIPLE(_condition, _exp, 1); \
-	} \
-	while (FALSE)
+		UNROLL_MULTIPLE(_condition, _exp, 4);  \
+		UNROLL_MULTIPLE(_condition, _exp, 1);  \
+	} while (FALSE)
 
 /*
    RLE Compressed Bitmap Stream (RLE_BITMAP_STREAM)
@@ -65,26 +66,26 @@
    http://msdn.microsoft.com/en-us/library/dd240593%28v=prot.10%29.aspx
 */
 
-#define REGULAR_BG_RUN              0x00
-#define MEGA_MEGA_BG_RUN            0xF0
-#define REGULAR_FG_RUN              0x01
-#define MEGA_MEGA_FG_RUN            0xF1
-#define LITE_SET_FG_FG_RUN          0x0C
-#define MEGA_MEGA_SET_FG_RUN        0xF6
-#define LITE_DITHERED_RUN           0x0E
-#define MEGA_MEGA_DITHERED_RUN      0xF8
-#define REGULAR_COLOR_RUN           0x03
-#define MEGA_MEGA_COLOR_RUN         0xF3
-#define REGULAR_FGBG_IMAGE          0x02
-#define MEGA_MEGA_FGBG_IMAGE        0xF2
-#define LITE_SET_FG_FGBG_IMAGE      0x0D
-#define MEGA_MEGA_SET_FGBG_IMAGE    0xF7
-#define REGULAR_COLOR_IMAGE         0x04
-#define MEGA_MEGA_COLOR_IMAGE       0xF4
-#define SPECIAL_FGBG_1              0xF9
-#define SPECIAL_FGBG_2              0xFA
-#define SPECIAL_WHITE               0xFD
-#define SPECIAL_BLACK               0xFE
+#define REGULAR_BG_RUN 0x00
+#define MEGA_MEGA_BG_RUN 0xF0
+#define REGULAR_FG_RUN 0x01
+#define MEGA_MEGA_FG_RUN 0xF1
+#define LITE_SET_FG_FG_RUN 0x0C
+#define MEGA_MEGA_SET_FG_RUN 0xF6
+#define LITE_DITHERED_RUN 0x0E
+#define MEGA_MEGA_DITHERED_RUN 0xF8
+#define REGULAR_COLOR_RUN 0x03
+#define MEGA_MEGA_COLOR_RUN 0xF3
+#define REGULAR_FGBG_IMAGE 0x02
+#define MEGA_MEGA_FGBG_IMAGE 0xF2
+#define LITE_SET_FG_FGBG_IMAGE 0x0D
+#define MEGA_MEGA_SET_FGBG_IMAGE 0xF7
+#define REGULAR_COLOR_IMAGE 0x04
+#define MEGA_MEGA_COLOR_IMAGE 0xF4
+#define SPECIAL_FGBG_1 0xF9
+#define SPECIAL_FGBG_2 0xFA
+#define SPECIAL_WHITE 0xFD
+#define SPECIAL_BLACK 0xFE
 
 #define BLACK_PIXEL 0x000000
 
@@ -126,13 +127,14 @@ static INLINE UINT32 ExtractCodeId(BYTE bOrderHdr)
 /**
  * Extract the run length of a compression order.
  */
-static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
+static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr, const BYTE* pbEnd,
                                       UINT32* advance)
 {
-	UINT32 runLength;
-	UINT32 ladvance;
-	ladvance = 1;
-	runLength = 0;
+	UINT32 runLength = 0;
+	UINT32 ladvance = 1;
+
+	if (pbOrderHdr >= pbEnd)
+		return 0;
 
 	switch (code)
 	{
@@ -141,6 +143,8 @@ static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
 
 			if (runLength == 0)
 			{
+				if (pbOrderHdr + 1 >= pbEnd)
+					return 0;
 				runLength = (*(pbOrderHdr + 1)) + 1;
 				ladvance += 1;
 			}
@@ -156,6 +160,9 @@ static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
 
 			if (runLength == 0)
 			{
+				if (pbOrderHdr + 1 >= pbEnd)
+					return 0;
+
 				runLength = (*(pbOrderHdr + 1)) + 1;
 				ladvance += 1;
 			}
@@ -175,6 +182,9 @@ static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
 			if (runLength == 0)
 			{
 				/* An extended (MEGA) run. */
+				if (pbOrderHdr + 1 >= pbEnd)
+					return 0;
+
 				runLength = (*(pbOrderHdr + 1)) + 32;
 				ladvance += 1;
 			}
@@ -188,6 +198,9 @@ static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
 			if (runLength == 0)
 			{
 				/* An extended (MEGA) run. */
+				if (pbOrderHdr + 1 >= pbEnd)
+					return 0;
+
 				runLength = (*(pbOrderHdr + 1)) + 16;
 				ladvance += 1;
 			}
@@ -202,7 +215,10 @@ static INLINE UINT32 ExtractRunLength(UINT32 code, const BYTE* pbOrderHdr,
 		case MEGA_MEGA_FGBG_IMAGE:
 		case MEGA_MEGA_SET_FGBG_IMAGE:
 		case MEGA_MEGA_COLOR_IMAGE:
-			runLength = ((UINT16) pbOrderHdr[1]) | ((UINT16)(pbOrderHdr[2] << 8));
+			if (pbOrderHdr + 2 >= pbEnd)
+				return 0;
+
+			runLength = ((UINT16)pbOrderHdr[1]) | ((UINT16)(pbOrderHdr[2] << 8));
 			ladvance += 2;
 			break;
 	}
@@ -215,7 +231,7 @@ static INLINE BOOL ensure_capacity(const BYTE* start, const BYTE* end, size_t si
 {
 	const size_t available = (uintptr_t)end - (uintptr_t)start;
 	const BOOL rc = available >= size * base;
-	return rc;
+	return rc && (start <= end);
 }
 
 static INLINE void write_pixel_8(BYTE* _buf, BYTE _pix)
@@ -232,7 +248,8 @@ static INLINE void write_pixel_24(BYTE* _buf, UINT32 _pix)
 
 static INLINE void write_pixel_16(BYTE* _buf, UINT16 _pix)
 {
-	*(UINT16*)_buf = _pix;
+	_buf[0] = _pix & 0xFF;
+	_buf[1] = (_pix >> 8) & 0xFF;
 }
 
 #undef DESTWRITEPIXEL
@@ -272,11 +289,7 @@ static INLINE void write_pixel_16(BYTE* _buf, UINT16 _pix)
 #define WHITE_PIXEL 0xFFFF
 #define DESTWRITEPIXEL(_buf, _pix) write_pixel_16(_buf, _pix)
 #define DESTREADPIXEL(_pix, _buf) _pix = ((UINT16*)(_buf))[0]
-#ifdef HAVE_ALIGNED_REQUIRED
 #define SRCREADPIXEL(_pix, _buf) _pix = (_buf)[0] | ((_buf)[1] << 8)
-#else
-#define SRCREADPIXEL(_pix, _buf) _pix = ((UINT16*)(_buf))[0]
-#endif
 #define DESTNEXTPIXEL(_buf) _buf += 2
 #define SRCNEXTPIXEL(_buf) _buf += 2
 #define WRITEFGBGIMAGE WriteFgBgImage16to16
@@ -298,11 +311,9 @@ static INLINE void write_pixel_16(BYTE* _buf, UINT16 _pix)
 #undef RLEEXTRA
 #undef WHITE_PIXEL
 #define WHITE_PIXEL 0xFFFFFF
-#define DESTWRITEPIXEL(_buf, _pix)  write_pixel_24(_buf, _pix)
-#define DESTREADPIXEL(_pix, _buf) _pix = (_buf)[0] | ((_buf)[1] << 8) | \
-        ((_buf)[2] << 16)
-#define SRCREADPIXEL(_pix, _buf) _pix = (_buf)[0] | ((_buf)[1] << 8) | \
-                                        ((_buf)[2] << 16)
+#define DESTWRITEPIXEL(_buf, _pix) write_pixel_24(_buf, _pix)
+#define DESTREADPIXEL(_pix, _buf) _pix = (_buf)[0] | ((_buf)[1] << 8) | ((_buf)[2] << 16)
+#define SRCREADPIXEL(_pix, _buf) _pix = (_buf)[0] | ((_buf)[1] << 8) | ((_buf)[2] << 16)
 #define DESTNEXTPIXEL(_buf) _buf += 3
 #define SRCNEXTPIXEL(_buf) _buf += 3
 #define WRITEFGBGIMAGE WriteFgBgImage24to24
@@ -313,13 +324,10 @@ static INLINE void write_pixel_16(BYTE* _buf, UINT16 _pix)
 #define ENSURE_CAPACITY(_start, _end, _size) ensure_capacity(_start, _end, _size, 3)
 #include "include/bitmap.c"
 
-BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
-                            const BYTE* pSrcData, UINT32 SrcSize,
-                            UINT32 nSrcWidth, UINT32 nSrcHeight,
-                            UINT32 bpp,
-                            BYTE* pDstData, UINT32 DstFormat,
-                            UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
-                            UINT32 nDstWidth, UINT32 nDstHeight,
+BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved, const BYTE* pSrcData,
+                            UINT32 SrcSize, UINT32 nSrcWidth, UINT32 nSrcHeight, UINT32 bpp,
+                            BYTE* pDstData, UINT32 DstFormat, UINT32 nDstStep, UINT32 nXDst,
+                            UINT32 nYDst, UINT32 nDstWidth, UINT32 nDstHeight,
                             const gdiPalette* palette)
 {
 	UINT32 scanline;
@@ -352,7 +360,7 @@ BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 			break;
 
 		default:
-			WLog_ERR(TAG, "Invalid color depth %"PRIu32"", bpp);
+			WLog_ERR(TAG, "Invalid color depth %" PRIu32 "", bpp);
 			return FALSE;
 	}
 
@@ -360,9 +368,7 @@ BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 
 	if (BufferSize > interleaved->TempSize)
 	{
-		interleaved->TempBuffer = _aligned_realloc(
-		                              interleaved->TempBuffer,
-		                              BufferSize, 16);
+		interleaved->TempBuffer = _aligned_realloc(interleaved->TempBuffer, BufferSize, 16);
 		interleaved->TempSize = BufferSize;
 	}
 
@@ -372,23 +378,23 @@ BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 	switch (bpp)
 	{
 		case 24:
-			if (!RleDecompress24to24(pSrcData, SrcSize, interleaved->TempBuffer,
-			                         scanline, nSrcWidth, nSrcHeight))
+			if (!RleDecompress24to24(pSrcData, SrcSize, interleaved->TempBuffer, scanline,
+			                         nSrcWidth, nSrcHeight))
 				return FALSE;
 
 			break;
 
 		case 16:
 		case 15:
-			if (!RleDecompress16to16(pSrcData, SrcSize, interleaved->TempBuffer,
-			                         scanline, nSrcWidth, nSrcHeight))
+			if (!RleDecompress16to16(pSrcData, SrcSize, interleaved->TempBuffer, scanline,
+			                         nSrcWidth, nSrcHeight))
 				return FALSE;
 
 			break;
 
 		case 8:
-			if (!RleDecompress8to8(pSrcData, SrcSize, interleaved->TempBuffer,
-			                       scanline, nSrcWidth, nSrcHeight))
+			if (!RleDecompress8to8(pSrcData, SrcSize, interleaved->TempBuffer, scanline, nSrcWidth,
+			                       nSrcHeight))
 				return FALSE;
 
 			break;
@@ -397,17 +403,15 @@ BOOL interleaved_decompress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 			return FALSE;
 	}
 
-	return freerdp_image_copy(pDstData, DstFormat, nDstStep, nXDst, nYDst,
-	                          nDstWidth, nDstHeight, interleaved->TempBuffer,
-	                          SrcFormat, scanline, 0, 0, palette, FREERDP_FLIP_VERTICAL);
+	return freerdp_image_copy(pDstData, DstFormat, nDstStep, nXDst, nYDst, nDstWidth, nDstHeight,
+	                          interleaved->TempBuffer, SrcFormat, scanline, 0, 0, palette,
+	                          FREERDP_FLIP_VERTICAL);
 }
 
-BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
-                          BYTE* pDstData, UINT32* pDstSize,
-                          UINT32 nWidth, UINT32 nHeight,
-                          const BYTE* pSrcData, UINT32 SrcFormat,
-                          UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc,
-                          const gdiPalette* palette, UINT32 bpp)
+BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* interleaved, BYTE* pDstData, UINT32* pDstSize,
+                          UINT32 nWidth, UINT32 nHeight, const BYTE* pSrcData, UINT32 SrcFormat,
+                          UINT32 nSrcStep, UINT32 nXSrc, UINT32 nYSrc, const gdiPalette* palette,
+                          UINT32 bpp)
 {
 	BOOL status;
 	wStream* s;
@@ -429,8 +433,9 @@ BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 	if ((nWidth > 64) || (nHeight > 64))
 	{
 		WLog_ERR(TAG,
-		         "interleaved_compress: width (%"PRIu32") or height (%"PRIu32") is greater than 64", nWidth,
-		         nHeight);
+		         "interleaved_compress: width (%" PRIu32 ") or height (%" PRIu32
+		         ") is greater than 64",
+		         nWidth, nHeight);
 		return FALSE;
 	}
 
@@ -452,9 +457,8 @@ BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 			return FALSE;
 	}
 
-	if (!freerdp_image_copy(interleaved->TempBuffer, DstFormat, 0, 0, 0, nWidth,
-	                        nHeight, pSrcData, SrcFormat, nSrcStep, nXSrc, nYSrc,
-	                        palette, FREERDP_FLIP_NONE))
+	if (!freerdp_image_copy(interleaved->TempBuffer, DstFormat, 0, 0, 0, nWidth, nHeight, pSrcData,
+	                        SrcFormat, nSrcStep, nXSrc, nYSrc, palette, FREERDP_FLIP_NONE))
 		return FALSE;
 
 	s = Stream_New(pDstData, *pDstSize);
@@ -464,15 +468,14 @@ BOOL interleaved_compress(BITMAP_INTERLEAVED_CONTEXT* interleaved,
 
 	Stream_SetPosition(interleaved->bts, 0);
 
-	if (freerdp_bitmap_compress(interleaved->TempBuffer, nWidth, nHeight,
-	                            s, bpp, maxSize, nHeight - 1,
-	                            interleaved->bts, 0) < 0)
+	if (freerdp_bitmap_compress(interleaved->TempBuffer, nWidth, nHeight, s, bpp, maxSize,
+	                            nHeight - 1, interleaved->bts, 0) < 0)
 		status = FALSE;
 	else
 		status = TRUE;
 
 	Stream_SealLength(s);
-	*pDstSize = (UINT32) Stream_Length(s);
+	*pDstSize = (UINT32)Stream_Length(s);
 	Stream_Free(s, FALSE);
 	return status;
 }
@@ -488,8 +491,7 @@ BOOL bitmap_interleaved_context_reset(BITMAP_INTERLEAVED_CONTEXT* interleaved)
 BITMAP_INTERLEAVED_CONTEXT* bitmap_interleaved_context_new(BOOL Compressor)
 {
 	BITMAP_INTERLEAVED_CONTEXT* interleaved;
-	interleaved = (BITMAP_INTERLEAVED_CONTEXT*) calloc(1,
-	              sizeof(BITMAP_INTERLEAVED_CONTEXT));
+	interleaved = (BITMAP_INTERLEAVED_CONTEXT*)calloc(1, sizeof(BITMAP_INTERLEAVED_CONTEXT));
 
 	if (interleaved)
 	{

@@ -1,45 +1,56 @@
+#include <winpr/file.h>
 #include <freerdp/crypto/crypto.h>
 
-
-typedef char*   (*get_field_pr)(X509*);
+typedef char* (*get_field_pr)(X509*);
 typedef struct
 {
 	enum
 	{
-		DISABLED, ENABLED,
+		DISABLED,
+		ENABLED,
 	} status;
 	const char* field_description;
 	get_field_pr get_field;
 	const char* expected_result;
 } certificate_test_t;
 
-char*   crypto_cert_subject_common_name_wo_length(X509* xcert)
+static char* crypto_cert_subject_common_name_wo_length(X509* xcert)
 {
 	int length;
-	return crypto_cert_subject_common_name(xcert, & length);
+	return crypto_cert_subject_common_name(xcert, &length);
 }
 
-char* certificate_path()
+static char* certificate_path(void)
 {
 	/*
 	Assume the .pem file is in the same directory as this source file.
-	Assume that __FILE__ will be a valid path to this file, even from the current working directory where the tests are run.
-	(ie. no chdir occurs between compilation and test running, or __FILE__ is an absolute path).
+	Assume that __FILE__ will be a valid path to this file, even from the current working directory
+	where the tests are run. (ie. no chdir occurs between compilation and test running, or __FILE__
+	is an absolute path).
 	*/
-#if defined(_WIN32)
-	static const char dirsep = '\\';
-#else
 	static const char dirsep = '/';
-#endif
-	static const char* filename = "Test_x509_cert_info.pem";
+	static const char filename[] = "Test_x509_cert_info.pem";
+#ifdef TEST_SOURCE_DIR
+	const char* file = TEST_SOURCE_DIR;
+	const size_t flen = sizeof(filename) + sizeof(dirsep) + strlen(file) + sizeof(char);
+	char* result = calloc(1, flen);
+	if (!result)
+		return NULL;
+	_snprintf(result, flen - 1, "%s%c%s", file, dirsep, filename);
+	return result;
+#else
 	const char* file = __FILE__;
 	const char* last_dirsep = strrchr(file, dirsep);
 
 	if (last_dirsep)
 	{
-		char* result = malloc(last_dirsep - file + 1 + strlen(filename) + 1);
-		strncpy(result, file, (last_dirsep - file + 1));
-		strcpy(result + (last_dirsep - file + 1), filename);
+		const size_t filenameLen = strnlen(filename, sizeof(filename));
+		const size_t dirsepLen = last_dirsep - file + 1;
+		char* result = malloc(dirsepLen + filenameLen + 1);
+		if (!result)
+			return NULL;
+		strncpy(result, file, dirsepLen);
+		strncpy(result + dirsepLen, filename, filenameLen + 1);
 		return result;
 	}
 	else
@@ -47,62 +58,37 @@ char* certificate_path()
 		/* No dirsep => relative path in same directory */
 		return _strdup(filename);
 	}
+#endif
 }
 
-const certificate_test_t certificate_tests[] =
-{
+static const certificate_test_t certificate_tests[] = {
 
-	{
-		ENABLED,
-		"Certificate Common Name",
-		crypto_cert_subject_common_name_wo_length,
-		"TESTJEAN TESTMARTIN 9999999"
-	},
+	{ ENABLED, "Certificate Common Name", crypto_cert_subject_common_name_wo_length,
+	  "TESTJEAN TESTMARTIN 9999999" },
 
-	{
-		ENABLED,
-		"Certificate subject",
-		crypto_cert_subject,
-		"CN = TESTJEAN TESTMARTIN 9999999, C = FR, O = MINISTERE DES TESTS, OU = 0002 110014016, OU = PERSONNES, UID = 9999999, GN = TESTJEAN, SN = TESTMARTIN"
-	},
+	{ ENABLED, "Certificate subject", crypto_cert_subject,
+	  "CN = TESTJEAN TESTMARTIN 9999999, C = FR, O = MINISTERE DES TESTS, OU = 0002 110014016, OU "
+	  "= PERSONNES, UID = 9999999, GN = TESTJEAN, SN = TESTMARTIN" },
 
-	{
-		DISABLED,
-		"Kerberos principal name",
-		0,
-		"testjean.testmartin@kpn.test.example.com"
-	},
+	{ DISABLED, "Kerberos principal name", 0, "testjean.testmartin@kpn.test.example.com" },
 
-	{
-		ENABLED,
-		"Certificate e-mail",
-		crypto_cert_get_email,
-		"testjean.testmartin@test.example.com"
+	{ ENABLED, "Certificate e-mail", crypto_cert_get_email, "testjean.testmartin@test.example.com"
 
 	},
 
-	{
-		ENABLED,
-		"Microsoft's Universal Principal Name",
-		crypto_cert_get_upn,
-		"testjean.testmartin.9999999@upn.test.example.com"
-	},
+	{ ENABLED, "Microsoft's Universal Principal Name", crypto_cert_get_upn,
+	  "testjean.testmartin.9999999@upn.test.example.com" },
 
-	{
-		ENABLED,
-		"Certificate issuer",
-		crypto_cert_issuer,
-		"CN = ADMINISTRATION CENTRALE DES TESTS, C = FR, O = MINISTERE DES TESTS, OU = 0002 110014016"
-	},
+	{ ENABLED, "Certificate issuer", crypto_cert_issuer,
+	  "CN = ADMINISTRATION CENTRALE DES TESTS, C = FR, O = MINISTERE DES TESTS, OU = 0002 "
+	  "110014016" },
 };
 
-
-
-int TestCertificateFile(const char* certificate_path, const certificate_test_t* certificate_tests,
-                        int count)
+static int TestCertificateFile(const char* certificate_path,
+                               const certificate_test_t* ccertificate_tests, int count)
 {
-	X509*   certificate;
-	FILE*   certificate_file = fopen(certificate_path, "r");
+	X509* certificate;
+	FILE* certificate_file = winpr_fopen(certificate_path, "r");
 	int success = 0;
 	int i;
 
@@ -122,32 +108,28 @@ int TestCertificateFile(const char* certificate_path, const certificate_test_t* 
 		goto fail;
 	}
 
-	for (i = 0; i < count; i ++)
+	for (i = 0; i < count; i++)
 	{
 		char* result;
 
-		if (certificate_tests[i].status == DISABLED)
+		if (ccertificate_tests[i].status == DISABLED)
 		{
 			continue;
 		}
 
-		result = (certificate_tests[i].get_field
-		          ? certificate_tests[i].get_field(certificate)
-		          : 0);
+		result =
+		    (ccertificate_tests[i].get_field ? ccertificate_tests[i].get_field(certificate) : 0);
 
 		if (result)
 		{
 			printf("%s: crypto got %-40s -> \"%s\"\n", __FUNCTION__,
-			       certificate_tests[i].field_description,
-			       result);
+			       ccertificate_tests[i].field_description, result);
 
-			if (0 != strcmp(result, certificate_tests[i].expected_result))
+			if (0 != strcmp(result, ccertificate_tests[i].expected_result))
 			{
-				printf("%s: failure: for %s, actual: \"%s\", expected \"%s\"\n",
-				       __FUNCTION__,
-				       certificate_tests[i].field_description,
-				       result,
-				       certificate_tests[i].expected_result);
+				printf("%s: failure: for %s, actual: \"%s\", expected \"%s\"\n", __FUNCTION__,
+				       ccertificate_tests[i].field_description, result,
+				       ccertificate_tests[i].expected_result);
 				success = -1;
 			}
 
@@ -156,7 +138,7 @@ int TestCertificateFile(const char* certificate_path, const certificate_test_t* 
 		else
 		{
 			printf("%s: failure: cannot get %s\n", __FUNCTION__,
-			       certificate_tests[i].field_description);
+			       ccertificate_tests[i].field_description);
 		}
 	}
 
@@ -164,7 +146,6 @@ fail:
 	X509_free(certificate);
 	return success;
 }
-
 
 int Test_x509_cert_info(int argc, char* argv[])
 {
@@ -176,4 +157,3 @@ int Test_x509_cert_info(int argc, char* argv[])
 	free(cert_path);
 	return ret;
 }
-

@@ -22,6 +22,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/stream.h>
+#include <winpr/wtsapi.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
@@ -52,7 +53,7 @@ typedef struct rdp_channel_client_data CHANNEL_CLIENT_DATA;
 
 struct rdp_channel_open_data
 {
-	char name[8];
+	char name[CHANNEL_NAME_LEN + 1];
 	int OpenHandle;
 	int options;
 	int flags;
@@ -112,18 +113,13 @@ struct rdp_channels
 
 	DrdynvcClientContext* drdynvc;
 	CRITICAL_SECTION channelsLock;
-
-	wHashTable* openHandles;
 };
 
 FREERDP_LOCAL rdpChannels* freerdp_channels_new(freerdp* instance);
-FREERDP_LOCAL UINT freerdp_channels_disconnect(rdpChannels* channels,
-        freerdp* instance);
-FREERDP_LOCAL void freerdp_channels_close(rdpChannels* channels,
-        freerdp* instance);
+FREERDP_LOCAL UINT freerdp_channels_disconnect(rdpChannels* channels, freerdp* instance);
+FREERDP_LOCAL void freerdp_channels_close(rdpChannels* channels, freerdp* instance);
 FREERDP_LOCAL void freerdp_channels_free(rdpChannels* channels);
-FREERDP_LOCAL UINT freerdp_channels_pre_connect(rdpChannels* channels,
-        freerdp* instance);
-FREERDP_LOCAL UINT freerdp_channels_post_connect(rdpChannels* channels,
-        freerdp* instance);
+FREERDP_LOCAL void freerdp_channels_register_instance(rdpChannels* channels, freerdp* instance);
+FREERDP_LOCAL UINT freerdp_channels_pre_connect(rdpChannels* channels, freerdp* instance);
+FREERDP_LOCAL UINT freerdp_channels_post_connect(rdpChannels* channels, freerdp* instance);
 #endif /* FREERDP_LIB_CORE_CLIENT_H */

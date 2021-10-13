@@ -30,8 +30,8 @@
  * Subsystem Interface
  */
 
-typedef UINT (*AudinReceive)(const AUDIO_FORMAT* format,
-                             const BYTE* data, size_t size, void* userData);
+typedef UINT (*AudinReceive)(const AUDIO_FORMAT* format, const BYTE* data, size_t size,
+                             void* userData);
 
 typedef struct _IAudinDevice IAudinDevice;
 struct _IAudinDevice
@@ -51,7 +51,7 @@ struct _FREERDP_AUDIN_DEVICE_ENTRY_POINTS
 {
 	IWTSPlugin* plugin;
 	PREGISTERAUDINDEVICE pRegisterAudinDevice;
-	ADDIN_ARGV* args;
+	const ADDIN_ARGV* args;
 	rdpContext* rdpcontext;
 };
 typedef struct _FREERDP_AUDIN_DEVICE_ENTRY_POINTS FREERDP_AUDIN_DEVICE_ENTRY_POINTS;
@@ -60,4 +60,3 @@ typedef FREERDP_AUDIN_DEVICE_ENTRY_POINTS* PFREERDP_AUDIN_DEVICE_ENTRY_POINTS;
 typedef UINT (*PFREERDP_AUDIN_DEVICE_ENTRY)(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEntryPoints);
 
 #endif /* FREERDP_CHANNEL_AUDIN_CLIENT_AUDIN_H */
-

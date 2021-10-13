@@ -29,9 +29,9 @@
 
 #ifdef _WIN32
 static INIT_ONCE init_once_module = INIT_ONCE_STATIC_INIT;
-static BOOL (WINAPI * pCallbackMayRunLong)(PTP_CALLBACK_INSTANCE pci);
+static BOOL(WINAPI* pCallbackMayRunLong)(PTP_CALLBACK_INSTANCE pci);
 
-static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID *context)
+static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID* context)
 {
 	HMODULE kernel32 = LoadLibraryA("kernel32.dll");
 	if (kernel32)
@@ -42,7 +42,7 @@ static BOOL CALLBACK init_module(PINIT_ONCE once, PVOID param, PVOID *context)
 }
 #endif
 
-BOOL CallbackMayRunLong(PTP_CALLBACK_INSTANCE pci)
+BOOL winpr_CallbackMayRunLong(PTP_CALLBACK_INSTANCE pci)
 {
 #ifdef _WIN32
 	InitOnceExecuteOnce(&init_once_module, init_module, NULL, NULL);

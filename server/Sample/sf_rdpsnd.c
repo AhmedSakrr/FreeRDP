@@ -23,8 +23,9 @@
 #include "config.h"
 #endif
 
-#include <freerdp/server/audin.h>
+#include <winpr/assert.h>
 
+#include <freerdp/server/audin.h>
 
 #include "sf_rdpsnd.h"
 
@@ -35,21 +36,27 @@
 static void sf_peer_rdpsnd_activated(RdpsndServerContext* context)
 {
 	WINPR_UNUSED(context);
+	WINPR_ASSERT(context);
 	WLog_DBG(TAG, "RDPSND Activated");
 }
 
 BOOL sf_peer_rdpsnd_init(testPeerContext* context)
 {
+	WINPR_ASSERT(context);
+
 	context->rdpsnd = rdpsnd_server_context_new(context->vcm);
+	WINPR_ASSERT(context->rdpsnd);
 	context->rdpsnd->rdpcontext = &context->_p;
 	context->rdpsnd->data = context;
-	context->rdpsnd->num_server_formats = server_rdpsnd_get_formats(&context->rdpsnd->server_formats);
+	context->rdpsnd->num_server_formats =
+	    server_rdpsnd_get_formats(&context->rdpsnd->server_formats);
 
 	if (context->rdpsnd->num_server_formats > 0)
 		context->rdpsnd->src_format = &context->rdpsnd->server_formats[0];
 
 	context->rdpsnd->Activated = sf_peer_rdpsnd_activated;
 
+	WINPR_ASSERT(context->rdpsnd->Initialize);
 	if (context->rdpsnd->Initialize(context->rdpsnd, TRUE) != CHANNEL_RC_OK)
 	{
 		return FALSE;

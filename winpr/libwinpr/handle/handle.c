@@ -26,7 +26,6 @@
 
 #ifndef _WIN32
 
-#include <assert.h>
 #include <pthread.h>
 
 #include "../synch/synch.h"
@@ -39,14 +38,14 @@
 #include <unistd.h>
 #endif
 
-#include <assert.h>
+#include <winpr/assert.h>
 
 #include "../handle/handle.h"
 
 BOOL CloseHandle(HANDLE hObject)
 {
 	ULONG Type;
-	WINPR_HANDLE *Object;
+	WINPR_HANDLE* Object;
 
 	if (!winpr_Handle_GetInfo(hObject, &Type, &Object))
 		return FALSE;
@@ -64,9 +63,10 @@ BOOL CloseHandle(HANDLE hObject)
 }
 
 BOOL DuplicateHandle(HANDLE hSourceProcessHandle, HANDLE hSourceHandle, HANDLE hTargetProcessHandle,
-		LPHANDLE lpTargetHandle, DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwOptions)
+                     LPHANDLE lpTargetHandle, DWORD dwDesiredAccess, BOOL bInheritHandle,
+                     DWORD dwOptions)
 {
-	*((ULONG_PTR*) lpTargetHandle) = (ULONG_PTR) hSourceHandle;
+	*((ULONG_PTR*)lpTargetHandle) = (ULONG_PTR)hSourceHandle;
 	return TRUE;
 }
 

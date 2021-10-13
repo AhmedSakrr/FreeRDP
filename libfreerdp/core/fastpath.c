@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include <winpr/crt.h>
+#include <winpr/assert.h>
 #include <winpr/stream.h>
 
 #include <freerdp/api.h>
@@ -47,6 +48,16 @@
 
 #define TAG FREERDP_TAG("core.fastpath")
 
+struct rdp_fastpath
+{
+	rdpRdp* rdp;
+	wStream* fs;
+	BYTE encryptionFlags;
+	BYTE numberEvents;
+	wStream* updateData;
+	int fragmentation;
+};
+
 /**
  * Fast-Path packet format is defined in [MS-RDPBCGR] 2.2.9.1.2, which revises
  * server output packets from the first byte with the goal of improving
@@ -57,20 +68,19 @@
  * two less significant bits of the first byte.
  */
 
-static const char* const FASTPATH_UPDATETYPE_STRINGS[] =
-{
-	"Orders",									/* 0x0 */
-	"Bitmap",									/* 0x1 */
-	"Palette",								/* 0x2 */
-	"Synchronize",						/* 0x3 */
-	"Surface Commands",				/* 0x4 */
-	"System Pointer Hidden",	/* 0x5 */
-	"System Pointer Default",	/* 0x6 */
-	"???",										/* 0x7 */
-	"Pointer Position",				/* 0x8 */
-	"Color Pointer",					/* 0x9 */
-	"Cached Pointer",					/* 0xA */
-	"New Pointer",						/* 0xB */
+static const char* const FASTPATH_UPDATETYPE_STRINGS[] = {
+	"Orders",                 /* 0x0 */
+	"Bitmap",                 /* 0x1 */
+	"Palette",                /* 0x2 */
+	"Synchronize",            /* 0x3 */
+	"Surface Commands",       /* 0x4 */
+	"System Pointer Hidden",  /* 0x5 */
+	"System Pointer Default", /* 0x6 */
+	"???",                    /* 0x7 */
+	"Pointer Position",       /* 0x8 */
+	"Color Pointer",          /* 0x9 */
+	"Cached Pointer",         /* 0xA */
+	"New Pointer",            /* 0xB */
 };
 
 static const char* fastpath_update_to_string(UINT8 update)
@@ -79,52 +89,6 @@ static const char* fastpath_update_to_string(UINT8 update)
 		return "UNKNOWN";
 
 	return FASTPATH_UPDATETYPE_STRINGS[update];
-}
-
-/*
- * The fastpath header may be two or three bytes long.
- * This function assumes that at least two bytes are available in the stream
- * and doesn't touch third byte.
- */
-UINT16 fastpath_header_length(wStream* s)
-{
-	BYTE length1;
-
-	if (!s || (Stream_GetRemainingLength(s) < 2))
-		return 0;
-
-	Stream_Seek_UINT8(s);
-	Stream_Read_UINT8(s, length1);
-	Stream_Rewind(s, 2);
-	return ((length1 & 0x80) != 0 ? 3 : 2);
-}
-
-/**
- * Read a Fast-Path packet header.\n
- * @param s stream
- * @param encryptionFlags
- * @return length
- */
-UINT16 fastpath_read_header(rdpFastPath* fastpath, wStream* s)
-{
-	BYTE header;
-	UINT16 length;
-
-	if (!s || (Stream_GetRemainingLength(s) < 1))
-		return 0;
-
-	Stream_Read_UINT8(s, header);
-
-	if (fastpath)
-	{
-		fastpath->encryptionFlags = (header & 0xC0) >> 6;
-		fastpath->numberEvents = (header & 0x3C) >> 2;
-	}
-
-	if (!per_read_length(s, &length))
-		return 0;
-
-	return length;
 }
 
 static BOOL fastpath_read_update_header(wStream* s, BYTE* updateCode, BYTE* fragmentation,
@@ -173,15 +137,13 @@ static BOOL fastpath_write_update_header(wStream* s, FASTPATH_UPDATE_HEADER* fpU
 
 static UINT32 fastpath_get_update_header_size(FASTPATH_UPDATE_HEADER* fpUpdateHeader)
 {
-	if (!fpUpdateHeader)
-		return 0;
-
+	WINPR_ASSERT(fpUpdateHeader);
 	return (fpUpdateHeader->compression) ? 4 : 3;
 }
 
 static BOOL fastpath_write_update_pdu_header(wStream* s,
-        FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
-        rdpRdp* rdp)
+                                             FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
+                                             rdpRdp* rdp)
 {
 	if (!s || !fpUpdatePduHeader || !rdp)
 		return FALSE;
@@ -192,12 +154,13 @@ static BOOL fastpath_write_update_pdu_header(wStream* s,
 	fpUpdatePduHeader->fpOutputHeader = 0;
 	fpUpdatePduHeader->fpOutputHeader |= (fpUpdatePduHeader->action & 0x03);
 	fpUpdatePduHeader->fpOutputHeader |= (fpUpdatePduHeader->secFlags & 0x03) << 6;
-	Stream_Write_UINT8(s, fpUpdatePduHeader->fpOutputHeader); /* fpOutputHeader (1 byte) */
+	Stream_Write_UINT8(s, fpUpdatePduHeader->fpOutputHeader);       /* fpOutputHeader (1 byte) */
 	Stream_Write_UINT8(s, 0x80 | (fpUpdatePduHeader->length >> 8)); /* length1 */
-	Stream_Write_UINT8(s, fpUpdatePduHeader->length & 0xFF); /* length2 */
+	Stream_Write_UINT8(s, fpUpdatePduHeader->length & 0xFF);        /* length2 */
 
 	if (fpUpdatePduHeader->secFlags)
 	{
+		WINPR_ASSERT(rdp->settings);
 		if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 		{
 			if (Stream_GetRemainingCapacity(s) < 4)
@@ -216,7 +179,7 @@ static BOOL fastpath_write_update_pdu_header(wStream* s,
 }
 
 static UINT32 fastpath_get_update_pdu_header_size(FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
-        rdpRdp* rdp)
+                                                  rdpRdp* rdp)
 {
 	UINT32 size = 3; /* fpUpdatePduHeader + length1 + length2 */
 
@@ -227,6 +190,7 @@ static UINT32 fastpath_get_update_pdu_header_size(FASTPATH_UPDATE_PDU_HEADER* fp
 	{
 		size += 8; /* dataSignature */
 
+		WINPR_ASSERT(rdp->settings);
 		if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 			size += 4; /* fipsInformation */
 	}
@@ -303,6 +267,7 @@ static BOOL fastpath_recv_update_common(rdpFastPath* fastpath, wStream* s)
 	UINT16 updateType;
 	rdpUpdate* update;
 	rdpContext* context;
+	BOOL defaultReturn;
 
 	if (!fastpath || !s || !fastpath->rdp)
 		return FALSE;
@@ -314,36 +279,37 @@ static BOOL fastpath_recv_update_common(rdpFastPath* fastpath, wStream* s)
 
 	context = update->context;
 
+	defaultReturn = freerdp_settings_get_bool(context->settings, FreeRDP_DeactivateClientDecoding);
+
 	if (Stream_GetRemainingLength(s) < 2)
 		return FALSE;
 
 	Stream_Read_UINT16(s, updateType); /* updateType (2 bytes) */
-
 	switch (updateType)
 	{
 		case UPDATE_TYPE_BITMAP:
-			{
-				BITMAP_UPDATE* bitmap_update = update_read_bitmap_update(update, s);
+		{
+			BITMAP_UPDATE* bitmap_update = update_read_bitmap_update(update, s);
 
-				if (!bitmap_update)
-					return FALSE;
+			if (!bitmap_update)
+				return FALSE;
 
-				rc = IFCALLRESULT(FALSE, update->BitmapUpdate, context, bitmap_update);
-				free_bitmap_update(context, bitmap_update);
-			}
-			break;
+			rc = IFCALLRESULT(defaultReturn, update->BitmapUpdate, context, bitmap_update);
+			free_bitmap_update(context, bitmap_update);
+		}
+		break;
 
 		case UPDATE_TYPE_PALETTE:
-			{
-				PALETTE_UPDATE* palette_update = update_read_palette(update, s);
+		{
+			PALETTE_UPDATE* palette_update = update_read_palette(update, s);
 
-				if (!palette_update)
-					return FALSE;
+			if (!palette_update)
+				return FALSE;
 
-				rc = IFCALLRESULT(FALSE, update->Palette, context, palette_update);
-				free_palette_update(context, palette_update);
-			}
-			break;
+			rc = IFCALLRESULT(defaultReturn, update->Palette, context, palette_update);
+			free_palette_update(context, palette_update);
+		}
+		break;
 
 		default:
 			break;
@@ -356,6 +322,9 @@ static BOOL fastpath_recv_update_synchronize(rdpFastPath* fastpath, wStream* s)
 {
 	/* server 2008 can send invalid synchronize packet with missing padding,
 	  so don't return FALSE even if the packet is invalid */
+	WINPR_ASSERT(fastpath);
+	WINPR_ASSERT(s);
+
 	Stream_SafeSeek(s, 2); /* size (2 bytes), MUST be set to zero */
 	return TRUE;
 }
@@ -367,6 +336,7 @@ static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, wStream*
 	rdpUpdate* update;
 	rdpContext* context;
 	rdpPointerUpdate* pointer;
+	BOOL defaultReturn;
 
 	if (!fastpath || !fastpath->rdp || !s)
 		return -1;
@@ -377,12 +347,17 @@ static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, wStream*
 		return -1;
 
 	context = update->context;
+	WINPR_ASSERT(context);
+
 	pointer = update->pointer;
+	WINPR_ASSERT(pointer);
+
 #ifdef WITH_DEBUG_RDP
-	DEBUG_RDP("recv Fast-Path %s Update (0x%02"PRIX8"), length:%"PRIuz"",
+	DEBUG_RDP("recv Fast-Path %s Update (0x%02" PRIX8 "), length:%" PRIuz "",
 	          fastpath_update_to_string(updateCode), updateCode, Stream_GetRemainingLength(s));
 #endif
 
+	defaultReturn = freerdp_settings_get_bool(context->settings, FreeRDP_DeactivateClientDecoding);
 	switch (updateCode)
 	{
 		case FASTPATH_UPDATETYPE_ORDERS:
@@ -396,7 +371,7 @@ static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, wStream*
 
 		case FASTPATH_UPDATETYPE_SYNCHRONIZE:
 			if (!fastpath_recv_update_synchronize(fastpath, s))
-				WLog_ERR(TAG,  "fastpath_recv_update_synchronize failure but we continue");
+				WLog_ERR(TAG, "fastpath_recv_update_synchronize failure but we continue");
 			else
 				rc = IFCALLRESULT(TRUE, update->Synchronize, context);
 
@@ -408,76 +383,88 @@ static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, wStream*
 			break;
 
 		case FASTPATH_UPDATETYPE_PTR_NULL:
-			{
-				POINTER_SYSTEM_UPDATE pointer_system;
-				pointer_system.type = SYSPTR_NULL;
-				rc = IFCALLRESULT(FALSE, pointer->PointerSystem, context, &pointer_system);
-			}
-			break;
+		{
+			POINTER_SYSTEM_UPDATE pointer_system;
+			pointer_system.type = SYSPTR_NULL;
+			rc = IFCALLRESULT(defaultReturn, pointer->PointerSystem, context, &pointer_system);
+		}
+		break;
 
 		case FASTPATH_UPDATETYPE_PTR_DEFAULT:
-			{
-				POINTER_SYSTEM_UPDATE pointer_system;
-				pointer_system.type = SYSPTR_DEFAULT;
-				rc = IFCALLRESULT(FALSE, pointer->PointerSystem, context, &pointer_system);
-			}
-			break;
+		{
+			POINTER_SYSTEM_UPDATE pointer_system;
+			pointer_system.type = SYSPTR_DEFAULT;
+			rc = IFCALLRESULT(defaultReturn, pointer->PointerSystem, context, &pointer_system);
+		}
+		break;
 
 		case FASTPATH_UPDATETYPE_PTR_POSITION:
-			{
-				POINTER_POSITION_UPDATE* pointer_position = update_read_pointer_position(update, s);
+		{
+			POINTER_POSITION_UPDATE* pointer_position = update_read_pointer_position(update, s);
 
-				if (pointer_position)
-				{
-					rc = IFCALLRESULT(FALSE, pointer->PointerPosition, context, pointer_position);
-					free_pointer_position_update(context, pointer_position);
-				}
+			if (pointer_position)
+			{
+				rc = IFCALLRESULT(defaultReturn, pointer->PointerPosition, context,
+				                  pointer_position);
+				free_pointer_position_update(context, pointer_position);
 			}
-			break;
+		}
+		break;
 
 		case FASTPATH_UPDATETYPE_COLOR:
-			{
-				POINTER_COLOR_UPDATE* pointer_color = update_read_pointer_color(update, s, 24);
+		{
+			POINTER_COLOR_UPDATE* pointer_color = update_read_pointer_color(update, s, 24);
 
-				if (pointer_color)
-				{
-					rc = IFCALLRESULT(FALSE, pointer->PointerColor, context, pointer_color);
-					free_pointer_color_update(context, pointer_color);
-				}
+			if (pointer_color)
+			{
+				rc = IFCALLRESULT(defaultReturn, pointer->PointerColor, context, pointer_color);
+				free_pointer_color_update(context, pointer_color);
 			}
-			break;
+		}
+		break;
 
 		case FASTPATH_UPDATETYPE_CACHED:
-			{
-				POINTER_CACHED_UPDATE* pointer_cached = update_read_pointer_cached(update, s);
+		{
+			POINTER_CACHED_UPDATE* pointer_cached = update_read_pointer_cached(update, s);
 
-				if (pointer_cached)
-				{
-					rc = IFCALLRESULT(FALSE, pointer->PointerCached, context, pointer_cached);
-					free_pointer_cached_update(context, pointer_cached);
-				}
+			if (pointer_cached)
+			{
+				rc = IFCALLRESULT(defaultReturn, pointer->PointerCached, context, pointer_cached);
+				free_pointer_cached_update(context, pointer_cached);
 			}
-			break;
+		}
+		break;
 
 		case FASTPATH_UPDATETYPE_POINTER:
+		{
+			POINTER_NEW_UPDATE* pointer_new = update_read_pointer_new(update, s);
+
+			if (pointer_new)
 			{
-				POINTER_NEW_UPDATE* pointer_new = update_read_pointer_new(update, s);
-
-				if (pointer_new)
-				{
-					rc = IFCALLRESULT(FALSE, pointer->PointerNew, context, pointer_new);
-					free_pointer_new_update(context, pointer_new);
-				}
+				rc = IFCALLRESULT(defaultReturn, pointer->PointerNew, context, pointer_new);
+				free_pointer_new_update(context, pointer_new);
 			}
-			break;
+		}
+		break;
 
+		case FASTPATH_UPDATETYPE_LARGE_POINTER:
+		{
+			POINTER_LARGE_UPDATE* pointer_large = update_read_pointer_large(update, s);
+
+			if (pointer_large)
+			{
+				rc = IFCALLRESULT(defaultReturn, pointer->PointerLarge, context, pointer_large);
+				free_pointer_large_update(context, pointer_large);
+			}
+		}
+		break;
 		default:
 			break;
 	}
 
 	if (!rc)
 	{
-		WLog_ERR(TAG, "Fastpath update %s [%"PRIx8"] failed, status %d",
+		WLog_ERR(TAG, "Fastpath update %s [%" PRIx8 "] failed, status %d",
 		         fastpath_update_to_string(updateCode), updateCode, status);
 		return -1;
 	}
@@ -508,7 +495,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 	if (!rdp)
 		return -1;
 
-	transport = fastpath->rdp->transport;
+	transport = rdp->transport;
 
 	if (!transport)
 		return -1;
@@ -537,8 +524,8 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 		return -1;
 	}
 
-	bulkStatus = bulk_decompress(rdp->bulk, Stream_Pointer(s), size, &pDstData, &DstSize,
-	                             compressionFlags);
+	bulkStatus =
+	    bulk_decompress(rdp->bulk, Stream_Pointer(s), size, &pDstData, &DstSize, compressionFlags);
 	Stream_Seek(s, size);
 
 	if (bulkStatus < 0)
@@ -573,12 +560,17 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 	}
 	else
 	{
+		rdpContext* context;
 		const size_t totalSize = Stream_GetPosition(fastpath->updateData);
 
-		if (totalSize > transport->settings->MultifragMaxRequestSize)
+		context = transport_get_context(transport);
+		WINPR_ASSERT(context);
+		WINPR_ASSERT(context->settings);
+
+		if (totalSize > context->settings->MultifragMaxRequestSize)
 		{
-			WLog_ERR(TAG, "Total size (%"PRIuz") exceeds MultifragMaxRequestSize (%"PRIu32")",
-			         totalSize, transport->settings->MultifragMaxRequestSize);
+			WLog_ERR(TAG, "Total size (%" PRIuz ") exceeds MultifragMaxRequestSize (%" PRIu32 ")",
+			         totalSize, context->settings->MultifragMaxRequestSize);
 			goto out_fail;
 		}
 
@@ -726,8 +718,8 @@ static BOOL fastpath_recv_input_event_mouse(rdpFastPath* fastpath, wStream* s, B
 		return FALSE;
 
 	Stream_Read_UINT16(s, pointerFlags); /* pointerFlags (2 bytes) */
-	Stream_Read_UINT16(s, xPos); /* xPos (2 bytes) */
-	Stream_Read_UINT16(s, yPos); /* yPos (2 bytes) */
+	Stream_Read_UINT16(s, xPos);         /* xPos (2 bytes) */
+	Stream_Read_UINT16(s, yPos);         /* yPos (2 bytes) */
 	return IFCALLRESULT(TRUE, input->MouseEvent, input, pointerFlags, xPos, yPos);
 }
 
@@ -747,8 +739,8 @@ static BOOL fastpath_recv_input_event_mousex(rdpFastPath* fastpath, wStream* s, 
 		return FALSE;
 
 	Stream_Read_UINT16(s, pointerFlags); /* pointerFlags (2 bytes) */
-	Stream_Read_UINT16(s, xPos); /* xPos (2 bytes) */
-	Stream_Read_UINT16(s, yPos); /* yPos (2 bytes) */
+	Stream_Read_UINT16(s, xPos);         /* xPos (2 bytes) */
+	Stream_Read_UINT16(s, yPos);         /* yPos (2 bytes) */
 	return IFCALLRESULT(TRUE, input->ExtendedMouseEvent, input, pointerFlags, xPos, yPos);
 }
 
@@ -782,8 +774,11 @@ static BOOL fastpath_recv_input_event_unicode(rdpFastPath* fastpath, wStream* s,
 	else
 		flags |= KBD_FLAGS_DOWN;
 
-	return IFCALLRESULT(FALSE, fastpath->rdp->input->UnicodeKeyboardEvent, fastpath->rdp->input, flags,
-	                    unicodeCode);
+	WINPR_ASSERT(fastpath->rdp);
+	WINPR_ASSERT(fastpath->rdp);
+	WINPR_ASSERT(fastpath->rdp->input);
+	return IFCALLRESULT(FALSE, fastpath->rdp->input->UnicodeKeyboardEvent, fastpath->rdp->input,
+	                    flags, unicodeCode);
 }
 
 static BOOL fastpath_recv_input_event(rdpFastPath* fastpath, wStream* s)
@@ -830,7 +825,7 @@ static BOOL fastpath_recv_input_event(rdpFastPath* fastpath, wStream* s)
 			break;
 
 		default:
-			WLog_ERR(TAG, "Unknown eventCode %"PRIu8"", eventCode);
+			WLog_ERR(TAG, "Unknown eventCode %" PRIu8 "", eventCode);
 			break;
 	}
 
@@ -924,8 +919,9 @@ wStream* fastpath_input_pdu_init(rdpFastPath* fastpath, BYTE eventFlags, BYTE ev
 	return s;
 }
 
-BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNumEvents)
+BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, size_t iNumEvents)
 {
+	int state;
 	BOOL rc = FALSE;
 	rdpRdp* rdp;
 	UINT16 length;
@@ -934,8 +930,18 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 	if (!s)
 		return FALSE;
 
-	if (!fastpath || !fastpath->rdp)
+	if (!fastpath)
 		goto fail;
+
+	rdp = fastpath->rdp;
+	WINPR_ASSERT(rdp);
+
+	state = rdp_get_state(rdp);
+	if (state != CONNECTION_STATE_ACTIVE)
+	{
+		WLog_WARN(TAG, "[%s] called before activation [%s]", __FUNCTION__, rdp_state_string(state));
+		goto fail;
+	}
 
 	/*
 	 *  A maximum of 15 events are allowed per request
@@ -945,7 +951,6 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 	if (iNumEvents > 15)
 		goto fail;
 
-	rdp = fastpath->rdp;
 	length = Stream_GetPosition(s);
 
 	if (length >= (2 << 14))
@@ -974,6 +979,7 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 		BYTE* fpInputEvents = Stream_Pointer(s) + sec_bytes;
 		UINT16 fpInputEvents_length = length - 3 - sec_bytes;
 
+		WINPR_ASSERT(rdp->settings);
 		if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 		{
 			BYTE pad;
@@ -982,10 +988,11 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 				pad = 0;
 
 			Stream_Write_UINT16(s, 0x10); /* length */
-			Stream_Write_UINT8(s, 0x1); /* TSFIPS_VERSION 1*/
-			Stream_Write_UINT8(s, pad); /* padding */
+			Stream_Write_UINT8(s, 0x1);   /* TSFIPS_VERSION 1*/
+			Stream_Write_UINT8(s, pad);   /* padding */
 
-			if (!security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s), rdp))
+			if (!security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s),
+			                             rdp))
 				goto fail;
 
 			if (pad)
@@ -1001,10 +1008,11 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 			BOOL status;
 
 			if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
-				status = security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length, TRUE,
-				                                       Stream_Pointer(s));
+				status = security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length,
+				                                       TRUE, Stream_Pointer(s));
 			else
-				status = security_mac_signature(rdp, fpInputEvents, fpInputEvents_length, Stream_Pointer(s));
+				status = security_mac_signature(rdp, fpInputEvents, fpInputEvents_length,
+				                                Stream_Pointer(s));
 
 			if (!status || !security_encrypt(fpInputEvents, fpInputEvents_length, rdp))
 				goto fail;
@@ -1023,7 +1031,7 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 	Stream_SetPosition(s, length);
 	Stream_SealLength(s);
 
-	if (transport_write(fastpath->rdp->transport, s) < 0)
+	if (transport_write(rdp->transport, s) < 0)
 		goto fail;
 
 	rc = TRUE;
@@ -1099,7 +1107,8 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 	if (totalLength > settings->MultifragMaxRequestSize)
 	{
 		WLog_ERR(TAG,
-		         "fast path update size (%"PRIu32") exceeds the client's maximum request size (%"PRIu32")",
+		         "fast path update size (%" PRIu32
+		         ") exceeds the client's maximum request size (%" PRIu32 ")",
 		         totalLength, settings->MultifragMaxRequestSize);
 		return FALSE;
 	}
@@ -1138,7 +1147,8 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 
 		if (settings->CompressionEnabled && !skipCompression)
 		{
-			if (bulk_compress(rdp->bulk, pSrcData, SrcSize, &pDstData, &DstSize, &compressionFlags) >= 0)
+			if (bulk_compress(rdp->bulk, pSrcData, SrcSize, &pDstData, &DstSize,
+			                  &compressionFlags) >= 0)
 			{
 				if (compressionFlags)
 				{
@@ -1158,9 +1168,11 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 		totalLength -= SrcSize;
 
 		if (totalLength == 0)
-			fpUpdateHeader.fragmentation = (fragment == 0) ? FASTPATH_FRAGMENT_SINGLE : FASTPATH_FRAGMENT_LAST;
+			fpUpdateHeader.fragmentation =
+			    (fragment == 0) ? FASTPATH_FRAGMENT_SINGLE : FASTPATH_FRAGMENT_LAST;
 		else
-			fpUpdateHeader.fragmentation = (fragment == 0) ? FASTPATH_FRAGMENT_FIRST : FASTPATH_FRAGMENT_NEXT;
+			fpUpdateHeader.fragmentation =
+			    (fragment == 0) ? FASTPATH_FRAGMENT_FIRST : FASTPATH_FRAGMENT_NEXT;
 
 		fpUpdateHeaderSize = fastpath_get_update_header_size(&fpUpdateHeader);
 		fpUpdatePduHeaderSize = fastpath_get_update_pdu_header_size(&fpUpdatePduHeader, rdp);
@@ -1235,7 +1247,10 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 rdpFastPath* fastpath_new(rdpRdp* rdp)
 {
 	rdpFastPath* fastpath;
-	fastpath = (rdpFastPath*) calloc(1, sizeof(rdpFastPath));
+
+	WINPR_ASSERT(rdp);
+
+	fastpath = (rdpFastPath*)calloc(1, sizeof(rdpFastPath));
 
 	if (!fastpath)
 		return NULL;
@@ -1262,4 +1277,10 @@ void fastpath_free(rdpFastPath* fastpath)
 		Stream_Free(fastpath->fs, TRUE);
 		free(fastpath);
 	}
+}
+
+BYTE fastpath_get_encryption_flags(rdpFastPath* fastpath)
+{
+	WINPR_ASSERT(fastpath);
+	return fastpath->encryptionFlags;
 }

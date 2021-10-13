@@ -29,10 +29,15 @@
 
 #define TAG CHANNELS_TAG("rdpsnd.client")
 
+FREERDP_API rdpContext* freerdp_rdpsnd_get_context(rdpsndPlugin* rdpsnd);
+
 #if defined(WITH_DEBUG_SND)
 #define DEBUG_SND(...) WLog_DBG(TAG, __VA_ARGS__)
 #else
-#define DEBUG_SND(...) do { } while (0)
+#define DEBUG_SND(...) \
+	do                 \
+	{                  \
+	} while (0)
 #endif
 
 #endif /* FREERDP_CHANNEL_RDPSND_CLIENT_MAIN_H */

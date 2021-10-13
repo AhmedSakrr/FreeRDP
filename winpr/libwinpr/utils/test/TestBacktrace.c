@@ -8,6 +8,9 @@ int TestBacktrace(int argc, char* argv[])
 	char** msg;
 	void* stack = winpr_backtrace(20);
 
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	if (!stack)
 	{
 		fprintf(stderr, "winpr_backtrace failed!\n");
@@ -19,7 +22,7 @@ int TestBacktrace(int argc, char* argv[])
 	if (msg)
 	{
 		for (x = 0; x < used; x++)
-			printf("%"PRIuz": %s\n", x, msg[x]);
+			printf("%" PRIuz ": %s\n", x, msg[x]);
 
 		rc = 0;
 	}

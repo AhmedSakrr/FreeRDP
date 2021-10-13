@@ -13,6 +13,10 @@ int TestEnvironmentGetSetEB(int argc, char* argv[])
 	DWORD length;
 	LPTCH lpszEnvironmentBlock = "SHELL=123\0test=1\0test1=2\0DISPLAY=WINPR_TEST_VALUE\0\0";
 	LPTCH lpszEnvironmentBlockNew = NULL;
+
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	rc = -1;
 	/* Get length of an variable */
 	length = GetEnvironmentVariableEBA(lpszEnvironmentBlock, "DISPLAY", NULL, 0);
@@ -21,7 +25,7 @@ int TestEnvironmentGetSetEB(int argc, char* argv[])
 		return -1;
 
 	/* Get the variable itself */
-	p = (LPSTR) malloc(length);
+	p = (LPSTR)malloc(length);
 
 	if (!p)
 		goto fail;
@@ -100,7 +104,7 @@ int TestEnvironmentGetSetEB(int argc, char* argv[])
 	}
 
 	free(lpszEnvironmentBlockNew);
-	lpszEnvironmentBlockNew = (LPTCH) calloc(1024, sizeof(TCHAR));
+	lpszEnvironmentBlockNew = (LPTCH)calloc(1024, sizeof(TCHAR));
 
 	if (!lpszEnvironmentBlockNew)
 		goto fail;
@@ -132,4 +136,3 @@ fail:
 #endif
 	return rc;
 }
-

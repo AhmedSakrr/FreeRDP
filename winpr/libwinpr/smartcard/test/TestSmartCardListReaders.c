@@ -6,20 +6,23 @@ int TestSmartCardListReaders(int argc, char* argv[])
 {
 	LONG lStatus;
 	LPSTR pReader;
-	SCARDCONTEXT hSC;
+	SCARDCONTEXT hSC = 0;
 	LPSTR mszReaders = NULL;
 	DWORD cchReaders = SCARD_AUTOALLOCATE;
+
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
 
 	lStatus = SCardEstablishContext(SCARD_SCOPE_USER, NULL, NULL, &hSC);
 
 	if (lStatus != SCARD_S_SUCCESS)
 	{
-		printf("SCardEstablishContext failure: %s (0x%08"PRIX32")\n",
-				SCardGetErrorString(lStatus), lStatus);
+		printf("SCardEstablishContext failure: %s (0x%08" PRIX32 ")\n",
+		       SCardGetErrorString(lStatus), lStatus);
 		return 0;
 	}
 
-	lStatus = SCardListReadersA(hSC, NULL, (LPSTR) &mszReaders, &cchReaders);
+	lStatus = SCardListReadersA(hSC, NULL, (LPSTR)&mszReaders, &cchReaders);
 
 	if (lStatus != SCARD_S_SUCCESS)
 	{
@@ -35,7 +38,7 @@ int TestSmartCardListReaders(int argc, char* argv[])
 		while (*pReader)
 		{
 			printf("Reader: %s\n", pReader);
-			pReader = pReader + strlen((CHAR*) pReader) + 1;
+			pReader = pReader + strlen((CHAR*)pReader) + 1;
 		}
 
 		lStatus = SCardFreeMemory(hSC, mszReaders);
@@ -48,4 +51,3 @@ int TestSmartCardListReaders(int argc, char* argv[])
 
 	return 0;
 }
-

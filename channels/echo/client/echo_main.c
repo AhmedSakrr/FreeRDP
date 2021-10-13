@@ -31,6 +31,7 @@
 
 #include "echo_main.h"
 #include <freerdp/channels/log.h>
+#include <freerdp/channels/echo.h>
 
 #define TAG CHANNELS_TAG("echo.client")
 
@@ -59,6 +60,8 @@ struct _ECHO_PLUGIN
 	IWTSPlugin iface;
 
 	ECHO_LISTENER_CALLBACK* listener_callback;
+	IWTSListener* listener;
+	BOOL initialized;
 };
 
 /**
@@ -66,9 +69,9 @@ struct _ECHO_PLUGIN
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT echo_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, wStream *data)
+static UINT echo_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, wStream* data)
 {
-	ECHO_CHANNEL_CALLBACK* callback = (ECHO_CHANNEL_CALLBACK*) pChannelCallback;
+	ECHO_CHANNEL_CALLBACK* callback = (ECHO_CHANNEL_CALLBACK*)pChannelCallback;
 	BYTE* pBuffer = Stream_Pointer(data);
 	UINT32 cbSize = Stream_GetRemainingLength(data);
 
@@ -83,7 +86,7 @@ static UINT echo_on_data_received(IWTSVirtualChannelCallback* pChannelCallback, 
  */
 static UINT echo_on_close(IWTSVirtualChannelCallback* pChannelCallback)
 {
-	ECHO_CHANNEL_CALLBACK* callback = (ECHO_CHANNEL_CALLBACK*) pChannelCallback;
+	ECHO_CHANNEL_CALLBACK* callback = (ECHO_CHANNEL_CALLBACK*)pChannelCallback;
 
 	free(callback);
 
@@ -96,13 +99,13 @@ static UINT echo_on_close(IWTSVirtualChannelCallback* pChannelCallback)
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT echo_on_new_channel_connection(IWTSListenerCallback* pListenerCallback,
-	IWTSVirtualChannel* pChannel, BYTE* Data, BOOL* pbAccept,
-	IWTSVirtualChannelCallback** ppCallback)
+                                           IWTSVirtualChannel* pChannel, BYTE* Data, BOOL* pbAccept,
+                                           IWTSVirtualChannelCallback** ppCallback)
 {
 	ECHO_CHANNEL_CALLBACK* callback;
-	ECHO_LISTENER_CALLBACK* listener_callback = (ECHO_LISTENER_CALLBACK*) pListenerCallback;
+	ECHO_LISTENER_CALLBACK* listener_callback = (ECHO_LISTENER_CALLBACK*)pListenerCallback;
 
-	callback = (ECHO_CHANNEL_CALLBACK*) calloc(1, sizeof(ECHO_CHANNEL_CALLBACK));
+	callback = (ECHO_CHANNEL_CALLBACK*)calloc(1, sizeof(ECHO_CHANNEL_CALLBACK));
 
 	if (!callback)
 	{
@@ -116,7 +119,7 @@ static UINT echo_on_new_channel_connection(IWTSListenerCallback* pListenerCallba
 	callback->channel_mgr = listener_callback->channel_mgr;
 	callback->channel = pChannel;
 
-	*ppCallback = (IWTSVirtualChannelCallback*) callback;
+	*ppCallback = (IWTSVirtualChannelCallback*)callback;
 
 	return CHANNEL_RC_OK;
 }
@@ -128,9 +131,14 @@ static UINT echo_on_new_channel_connection(IWTSListenerCallback* pListenerCallba
  */
 static UINT echo_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManager* pChannelMgr)
 {
-	ECHO_PLUGIN* echo = (ECHO_PLUGIN*) pPlugin;
-
-	echo->listener_callback = (ECHO_LISTENER_CALLBACK*) calloc(1, sizeof(ECHO_LISTENER_CALLBACK));
+	UINT status;
+	ECHO_PLUGIN* echo = (ECHO_PLUGIN*)pPlugin;
+	if (echo->initialized)
+	{
+		WLog_ERR(TAG, "[%s] channel initialized twice, aborting", ECHO_DVC_CHANNEL_NAME);
+		return ERROR_INVALID_DATA;
+	}
+	echo->listener_callback = (ECHO_LISTENER_CALLBACK*)calloc(1, sizeof(ECHO_LISTENER_CALLBACK));
 
 	if (!echo->listener_callback)
 	{
@@ -142,8 +150,11 @@ static UINT echo_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManage
 	echo->listener_callback->plugin = pPlugin;
 	echo->listener_callback->channel_mgr = pChannelMgr;
 
-	return pChannelMgr->CreateListener(pChannelMgr, "ECHO", 0,
-		(IWTSListenerCallback*) echo->listener_callback, NULL);
+	status = pChannelMgr->CreateListener(pChannelMgr, ECHO_DVC_CHANNEL_NAME, 0,
+	                                     &echo->listener_callback->iface, &echo->listener);
+
+	echo->initialized = status == CHANNEL_RC_OK;
+	return status;
 }
 
 /**
@@ -153,17 +164,22 @@ static UINT echo_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManage
  */
 static UINT echo_plugin_terminated(IWTSPlugin* pPlugin)
 {
-	ECHO_PLUGIN* echo = (ECHO_PLUGIN*) pPlugin;
-
+	ECHO_PLUGIN* echo = (ECHO_PLUGIN*)pPlugin;
+	if (echo && echo->listener_callback)
+	{
+		IWTSVirtualChannelManager* mgr = echo->listener_callback->channel_mgr;
+		if (mgr)
+			IFCALL(mgr->DestroyListener, mgr, echo->listener);
+	}
 	free(echo);
 
 	return CHANNEL_RC_OK;
 }
 
 #ifdef BUILTIN_CHANNELS
-#define DVCPluginEntry		echo_DVCPluginEntry
+#define DVCPluginEntry echo_DVCPluginEntry
 #else
-#define DVCPluginEntry		FREERDP_API DVCPluginEntry
+#define DVCPluginEntry FREERDP_API DVCPluginEntry
 #endif
 
 /**
@@ -176,11 +192,11 @@ UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 	UINT status = CHANNEL_RC_OK;
 	ECHO_PLUGIN* echo;
 
-	echo = (ECHO_PLUGIN*) pEntryPoints->GetPlugin(pEntryPoints, "echo");
+	echo = (ECHO_PLUGIN*)pEntryPoints->GetPlugin(pEntryPoints, "echo");
 
 	if (!echo)
 	{
-		echo = (ECHO_PLUGIN*) calloc(1, sizeof(ECHO_PLUGIN));
+		echo = (ECHO_PLUGIN*)calloc(1, sizeof(ECHO_PLUGIN));
 
 		if (!echo)
 		{
@@ -193,7 +209,7 @@ UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 		echo->iface.Disconnected = NULL;
 		echo->iface.Terminated = echo_plugin_terminated;
 
-		status = pEntryPoints->RegisterPlugin(pEntryPoints, "echo", (IWTSPlugin*) echo);
+		status = pEntryPoints->RegisterPlugin(pEntryPoints, "echo", &echo->iface);
 	}
 
 	return status;

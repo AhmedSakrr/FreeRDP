@@ -20,20 +20,14 @@
 #ifndef FREERDP_LIB_CORE_HEARTBEET_H
 #define FREERDP_LIB_CORE_HEARTBEET_H
 
-typedef struct rdp_heartbeat rdpHeartbeat;
-
 #include "rdp.h"
 
+#include <freerdp/heartbeat.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/log.h>
 #include <freerdp/api.h>
 
 #include <winpr/stream.h>
-
-struct rdp_heartbeat
-{
-	UINT32 placeholder;
-};
 
 int rdp_recv_heartbeat_packet(rdpRdp* rdp, wStream* s);
 

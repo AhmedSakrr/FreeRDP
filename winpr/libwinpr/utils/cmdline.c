@@ -22,7 +22,7 @@
 #endif
 
 #include <winpr/crt.h>
-
+#include <winpr/assert.h>
 #include <winpr/cmdline.h>
 
 #include "../log.h"
@@ -55,9 +55,9 @@ static void log_error(DWORD flags, LPCSTR message, int index, LPCSTR argv)
 		WLog_ERR(TAG, message, index, argv);
 }
 
-int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* options,
-                               DWORD flags,
-                               void* context, COMMAND_LINE_PRE_FILTER_FN_A preFilter, COMMAND_LINE_POST_FILTER_FN_A postFilter)
+int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* options, DWORD flags,
+                               void* context, COMMAND_LINE_PRE_FILTER_FN_A preFilter,
+                               COMMAND_LINE_POST_FILTER_FN_A postFilter)
 {
 	int i, j;
 	int status;
@@ -99,7 +99,8 @@ int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* o
 
 			if (count < 0)
 			{
-				log_error(flags, "Failed for index %d [%s]: PreFilter rule could not be applied", i, argv[i]);
+				log_error(flags, "Failed for index %d [%s]: PreFilter rule could not be applied", i,
+				          argv[i]);
 				status = COMMAND_LINE_ERROR;
 				return status;
 			}
@@ -311,7 +312,8 @@ int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* o
 
 				if (value)
 				{
-					if (options[j].Flags & (COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_VALUE_BOOL))
+					if (!(options[j].Flags &
+					      (COMMAND_LINE_VALUE_OPTIONAL | COMMAND_LINE_VALUE_REQUIRED)))
 					{
 						log_error(flags, "Failed at index %d [%s]: Unexpected value", i, argv[i]);
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
@@ -324,7 +326,7 @@ int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* o
 				{
 					if (options[j].Flags & COMMAND_LINE_VALUE_FLAG)
 					{
-						options[j].Value = (LPSTR) 1;
+						options[j].Value = (LPSTR)1;
 						options[j].Flags |= COMMAND_LINE_VALUE_PRESENT;
 					}
 					else if (options[j].Flags & COMMAND_LINE_VALUE_BOOL)
@@ -358,7 +360,9 @@ int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* o
 
 					if (count < 0)
 					{
-						log_error(flags, "Failed at index %d [%s]: PostFilter rule could not be applied", i, argv[i]);
+						log_error(flags,
+						          "Failed at index %d [%s]: PostFilter rule could not be applied",
+						          i, argv[i]);
 						status = COMMAND_LINE_ERROR;
 						return status;
 					}
@@ -386,8 +390,8 @@ int CommandLineParseArgumentsA(int argc, LPSTR* argv, COMMAND_LINE_ARGUMENT_A* o
 }
 
 int CommandLineParseArgumentsW(int argc, LPWSTR* argv, COMMAND_LINE_ARGUMENT_W* options,
-                               DWORD flags,
-                               void* context, COMMAND_LINE_PRE_FILTER_FN_W preFilter, COMMAND_LINE_POST_FILTER_FN_W postFilter)
+                               DWORD flags, void* context, COMMAND_LINE_PRE_FILTER_FN_W preFilter,
+                               COMMAND_LINE_POST_FILTER_FN_W postFilter)
 {
 	return 0;
 }
@@ -418,9 +422,13 @@ int CommandLineClearArgumentsW(COMMAND_LINE_ARGUMENT_W* options)
 	return 0;
 }
 
-COMMAND_LINE_ARGUMENT_A* CommandLineFindArgumentA(COMMAND_LINE_ARGUMENT_A* options, LPCSTR Name)
+const COMMAND_LINE_ARGUMENT_A* CommandLineFindArgumentA(const COMMAND_LINE_ARGUMENT_A* options,
+                                                        LPCSTR Name)
 {
-	int i;
+	size_t i;
+
+	WINPR_ASSERT(options);
+	WINPR_ASSERT(Name);
 
 	for (i = 0; options[i].Name != NULL; i++)
 	{
@@ -437,9 +445,13 @@ COMMAND_LINE_ARGUMENT_A* CommandLineFindArgumentA(COMMAND_LINE_ARGUMENT_A* optio
 	return NULL;
 }
 
-COMMAND_LINE_ARGUMENT_W* CommandLineFindArgumentW(COMMAND_LINE_ARGUMENT_W* options, LPCWSTR Name)
+const COMMAND_LINE_ARGUMENT_W* CommandLineFindArgumentW(const COMMAND_LINE_ARGUMENT_W* options,
+                                                        LPCWSTR Name)
 {
-	int i;
+	size_t i;
+
+	WINPR_ASSERT(options);
+	WINPR_ASSERT(Name);
 
 	for (i = 0; options[i].Name != NULL; i++)
 	{
@@ -456,9 +468,9 @@ COMMAND_LINE_ARGUMENT_W* CommandLineFindArgumentW(COMMAND_LINE_ARGUMENT_W* optio
 	return NULL;
 }
 
-COMMAND_LINE_ARGUMENT_A* CommandLineFindNextArgumentA(COMMAND_LINE_ARGUMENT_A* argument)
+const COMMAND_LINE_ARGUMENT_A* CommandLineFindNextArgumentA(const COMMAND_LINE_ARGUMENT_A* argument)
 {
-	COMMAND_LINE_ARGUMENT_A* nextArgument;
+	const COMMAND_LINE_ARGUMENT_A* nextArgument;
 
 	if (!argument || !argument->Name)
 		return NULL;
@@ -469,4 +481,150 @@ COMMAND_LINE_ARGUMENT_A* CommandLineFindNextArgumentA(COMMAND_LINE_ARGUMENT_A* a
 		return NULL;
 
 	return nextArgument;
+}
+
+char** CommandLineParseCommaSeparatedValuesEx(const char* name, const char* list, size_t* count)
+{
+	char** p;
+	char* str;
+	size_t nArgs;
+	size_t index;
+	size_t nCommas;
+	size_t prefix, len, namelen = 0;
+	nCommas = 0;
+
+	if (count == NULL)
+		return NULL;
+
+	*count = 0;
+
+	if (!list || strlen(list) == 0)
+	{
+		if (name)
+		{
+			size_t clen = strlen(name);
+			p = (char**)calloc(2UL + clen, sizeof(char*));
+
+			if (p)
+			{
+				char* dst = (char*)&p[1];
+				p[0] = dst;
+				sprintf_s(dst, clen + 1, "%s", name);
+				*count = 1;
+				return p;
+			}
+		}
+
+		return NULL;
+	}
+
+	{
+		const char* it = list;
+
+		while ((it = strchr(it, ',')) != NULL)
+		{
+			it++;
+			nCommas++;
+		}
+	}
+
+	nArgs = nCommas + 1;
+
+	if (name)
+		nArgs++;
+
+	prefix = (nArgs + 1UL) * sizeof(char*);
+	len = strlen(list);
+	if (name)
+		namelen = strlen(name);
+	p = (char**)calloc(len + prefix + 1 + namelen + 1, sizeof(char*));
+
+	if (!p)
+		return NULL;
+
+	str = &((char*)p)[prefix];
+	memcpy(str, list, len);
+
+	if (name)
+	{
+		char* namestr = &((char*)p)[prefix + len + 1];
+		memcpy(namestr, name, namelen);
+
+		p[0] = namestr;
+	}
+
+	for (index = name ? 1 : 0; index < nArgs; index++)
+	{
+		char* comma = strchr(str, ',');
+		p[index] = str;
+
+		if (comma)
+		{
+			str = comma + 1;
+			*comma = '\0';
+		}
+	}
+
+	*count = nArgs;
+	return p;
+}
+
+char** CommandLineParseCommaSeparatedValues(const char* list, size_t* count)
+{
+	return CommandLineParseCommaSeparatedValuesEx(NULL, list, count);
+}
+
+char* CommandLineToCommaSeparatedValues(int argc, char* argv[])
+{
+	return CommandLineToCommaSeparatedValuesEx(argc, argv, NULL, 0);
+}
+
+static const char* filtered(const char* arg, const char* filters[], size_t number)
+{
+	size_t x;
+	if (number == 0)
+		return arg;
+	for (x = 0; x < number; x++)
+	{
+		const char* filter = filters[x];
+		size_t len = strlen(filter);
+		if (_strnicmp(arg, filter, len) == 0)
+			return &arg[len];
+	}
+	return NULL;
+}
+
+char* CommandLineToCommaSeparatedValuesEx(int argc, char* argv[], const char* filters[],
+                                          size_t number)
+{
+	int x;
+	char* str = NULL;
+	size_t offset = 0;
+	size_t size = argc + 1;
+	if ((argc <= 0) || !argv)
+		return NULL;
+
+	for (x = 0; x < argc; x++)
+		size += strlen(argv[x]);
+
+	str = calloc(size, sizeof(char));
+	if (!str)
+		return NULL;
+	for (x = 0; x < argc; x++)
+	{
+		int rc;
+		const char* arg = filtered(argv[x], filters, number);
+		if (!arg)
+			continue;
+		rc = _snprintf(&str[offset], size - offset, "%s,", arg);
+		if (rc <= 0)
+		{
+			free(str);
+			return NULL;
+		}
+		offset += (size_t)rc;
+	}
+	if (offset > 0)
+		str[offset - 1] = '\0';
+	return str;
 }

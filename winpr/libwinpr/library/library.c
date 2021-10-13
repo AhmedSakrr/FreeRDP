@@ -158,7 +158,7 @@ HMODULE LoadLibraryW(LPCWSTR lpLibFileName)
 HMODULE LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
 	if (dwFlags != 0)
-		WLog_WARN(TAG, "%s does not support dwFlags 0x%08"PRIx32, __FUNCTION__, dwFlags);
+		WLog_WARN(TAG, "%s does not support dwFlags 0x%08" PRIx32, __FUNCTION__, dwFlags);
 
 	if (hFile)
 		WLog_WARN(TAG, "%s does not support hFile != NULL", __FUNCTION__);
@@ -169,7 +169,7 @@ HMODULE LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 HMODULE LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
 	if (dwFlags != 0)
-		WLog_WARN(TAG, "%s does not support dwFlags 0x%08"PRIx32, __FUNCTION__, dwFlags);
+		WLog_WARN(TAG, "%s does not support dwFlags 0x%08" PRIx32, __FUNCTION__, dwFlags);
 
 	if (hFile)
 		WLog_WARN(TAG, "%s does not support hFile != NULL", __FUNCTION__);
@@ -189,7 +189,7 @@ FARPROC GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 	if (proc == NULL)
 	{
 		WLog_ERR(TAG, "GetProcAddress: could not find procedure %s: %s", lpProcName, dlerror());
-		return (FARPROC) NULL;
+		return (FARPROC)NULL;
 	}
 
 	return proc;
@@ -266,7 +266,7 @@ DWORD GetModuleFileNameW(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 {
 #if defined(__linux__)
-	int status;
+	SSIZE_T status;
 	size_t length;
 	char path[64];
 
@@ -283,13 +283,13 @@ DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 		}
 
 		buffer[status] = '\0';
-		length = strlen(buffer);
+		length = strnlen(buffer, sizeof(buffer));
 
 		if (length < nSize)
 		{
 			CopyMemory(lpFilename, buffer, length);
 			lpFilename[length] = '\0';
-			return length;
+			return (DWORD)length;
 		}
 
 		CopyMemory(lpFilename, buffer, nSize - 1);
@@ -321,7 +321,7 @@ DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 		 * so use realpath to find the absolute, canonical path.
 		 */
 		realpath(path, buffer);
-		length = strlen(buffer);
+		length = strnlen(buffer, sizeof(buffer));
 
 		if (length < nSize)
 		{
@@ -344,3 +344,32 @@ DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 
 #endif
 
+HMODULE LoadLibraryX(LPCSTR lpLibFileName)
+{
+#if defined(_WIN32)
+	HMODULE hm = NULL;
+	WCHAR* wstr = NULL;
+	int rc = ConvertToUnicode(CP_UTF8, 0, lpLibFileName, -1, &wstr, 0);
+	if (rc > 0)
+		hm = LoadLibraryW(wstr);
+	free(wstr);
+	return hm;
+#else
+	return LoadLibraryA(lpLibFileName);
+#endif
+}
+
+HMODULE LoadLibraryExX(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
+{
+#if defined(_WIN32)
+	HMODULE hm = NULL;
+	WCHAR* wstr = NULL;
+	int rc = ConvertToUnicode(CP_UTF8, 0, lpLibFileName, -1, &wstr, 0);
+	if (rc > 0)
+		hm = LoadLibraryExW(wstr, hFile, dwFlags);
+	free(wstr);
+	return hm;
+#else
+	return LoadLibraryExA(lpLibFileName, hFile, dwFlags);
+#endif
+}

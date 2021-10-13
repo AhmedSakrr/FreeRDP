@@ -9,6 +9,7 @@
 LPSTR tr_esc_str(LPCSTR arg, bool format)
 {
 	LPSTR tmp = NULL;
+	LPSTR tmp2 = NULL;
 	size_t cs = 0, x, ds, len;
 	size_t s;
 
@@ -24,12 +25,17 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 	/* Prepare a initial buffer with the size of the result string. */
 	ds = s + 1;
 
-	if (s)
-		tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+	if (ds)
+	{
+		tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+		if (!tmp2)
+			free(tmp);
+		tmp = tmp2;
+	}
 
 	if (NULL == tmp)
 	{
-		fprintf(stderr,  "Could not allocate string buffer.\n");
+		fprintf(stderr, "Could not allocate string buffer.\n");
 		exit(-2);
 	}
 
@@ -43,11 +49,14 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 			case '<':
 				len = format ? 13 : 4;
 				ds += len - 1;
-				tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				if (!tmp2)
+					free(tmp);
+				tmp = tmp2;
 
 				if (NULL == tmp)
 				{
-					fprintf(stderr,  "Could not reallocate string buffer.\n");
+					fprintf(stderr, "Could not reallocate string buffer.\n");
 					exit(-3);
 				}
 
@@ -64,11 +73,14 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 			case '>':
 				len = format ? 14 : 4;
 				ds += len - 1;
-				tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				if (!tmp2)
+					free(tmp);
+				tmp = tmp2;
 
 				if (NULL == tmp)
 				{
-					fprintf(stderr,  "Could not reallocate string buffer.\n");
+					fprintf(stderr, "Could not reallocate string buffer.\n");
 					exit(-4);
 				}
 
@@ -77,18 +89,21 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 					strncpy(&tmp[cs], "</replaceable>", len);
 				else
 					/* coverity[buffer_size] */
-					strncpy(&tmp[cs], "&lt;", len);
+					strncpy(&tmp[cs], "&gt;", len);
 
 				cs += len;
 				break;
 
 			case '\'':
 				ds += 5;
-				tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				if (!tmp2)
+					free(tmp);
+				tmp = tmp2;
 
 				if (NULL == tmp)
 				{
-					fprintf(stderr,  "Could not reallocate string buffer.\n");
+					fprintf(stderr, "Could not reallocate string buffer.\n");
 					exit(-5);
 				}
 
@@ -102,11 +117,14 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 
 			case '"':
 				ds += 5;
-				tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				if (!tmp2)
+					free(tmp);
+				tmp = tmp2;
 
 				if (NULL == tmp)
 				{
-					fprintf(stderr,  "Could not reallocate string buffer.\n");
+					fprintf(stderr, "Could not reallocate string buffer.\n");
 					exit(-6);
 				}
 
@@ -120,11 +138,14 @@ LPSTR tr_esc_str(LPCSTR arg, bool format)
 
 			case '&':
 				ds += 4;
-				tmp = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				tmp2 = (LPSTR)realloc(tmp, ds * sizeof(CHAR));
+				if (!tmp2)
+					free(tmp);
+				tmp = tmp2;
 
 				if (NULL == tmp)
 				{
-					fprintf(stderr,  "Could not reallocate string buffer.\n");
+					fprintf(stderr, "Could not reallocate string buffer.\n");
 					exit(-7);
 				}
 
@@ -158,7 +179,7 @@ int main(int argc, char* argv[])
 
 	if (NULL == fp)
 	{
-		fprintf(stderr,  "Could not open '%s' for writing.\n", fname);
+		fprintf(stderr, "Could not open '%s' for writing.\n", fname);
 		return -1;
 	}
 
@@ -171,17 +192,17 @@ int main(int argc, char* argv[])
 	 * compatible XML */
 	if (elements < 2)
 	{
-		fprintf(stderr,  "The argument array 'args' is empty, writing an empty file.\n");
+		fprintf(stderr, "The argument array 'args' is empty, writing an empty file.\n");
 		elements = 1;
 	}
 
 	for (x = 0; x < elements - 1; x++)
 	{
 		const COMMAND_LINE_ARGUMENT_A* arg = &args[x];
-		char* name = tr_esc_str((LPSTR) arg->Name, FALSE);
-		char* alias = tr_esc_str((LPSTR) arg->Alias, FALSE);
+		char* name = tr_esc_str((LPSTR)arg->Name, FALSE);
+		char* alias = tr_esc_str((LPSTR)arg->Alias, FALSE);
 		char* format = tr_esc_str(arg->Format, TRUE);
-		char* text = tr_esc_str((LPSTR) arg->Text, FALSE);
+		char* text = tr_esc_str((LPSTR)arg->Text, FALSE);
 		fprintf(fp, "\t\t\t<varlistentry>\n");
 
 		do
@@ -213,8 +234,7 @@ int main(int argc, char* argv[])
 
 			free(name);
 			name = alias;
-		}
-		while (alias);
+		} while (alias);
 
 		if (text)
 		{
@@ -224,11 +244,12 @@ int main(int argc, char* argv[])
 			if (text)
 				fprintf(fp, "%s", text);
 
-			if (arg->Flags == COMMAND_LINE_VALUE_BOOL)
+			if (arg->Flags & COMMAND_LINE_VALUE_BOOL &&
+			    (!arg->Default || arg->Default == BoolValueTrue))
 				fprintf(fp, " (default:%s)", arg->Default ? "on" : "off");
 			else if (arg->Default)
 			{
-				char* value = tr_esc_str((LPSTR) arg->Default, FALSE);
+				char* value = tr_esc_str((LPSTR)arg->Default, FALSE);
 				fprintf(fp, " (default:%s)", value);
 				free(value);
 			}
@@ -248,4 +269,3 @@ int main(int argc, char* argv[])
 	fclose(fp);
 	return 0;
 }
-

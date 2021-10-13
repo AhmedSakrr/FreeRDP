@@ -13,24 +13,28 @@ int TestEnvironmentSetEnvironmentVariable(int argc, char* argv[])
 	DWORD nSize;
 	LPSTR lpBuffer = NULL;
 	DWORD error = 0;
+
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	SetEnvironmentVariableA(TEST_NAME, TEST_VALUE);
 	nSize = GetEnvironmentVariableA(TEST_NAME, NULL, 0);
 
 	/* check if value returned is len + 1 ) */
-	if (nSize != strlen(TEST_VALUE) + 1)
+	if (nSize != strnlen(TEST_VALUE, sizeof(TEST_VALUE)) + 1)
 	{
 		printf("GetEnvironmentVariableA not found error\n");
 		return -1;
 	}
 
-	lpBuffer = (LPSTR) malloc(nSize);
+	lpBuffer = (LPSTR)malloc(nSize);
 
 	if (!lpBuffer)
 		return -1;
 
 	nSize = GetEnvironmentVariableA(TEST_NAME, lpBuffer, nSize);
 
-	if (nSize != strlen(TEST_VALUE))
+	if (nSize != strnlen(TEST_VALUE, sizeof(TEST_VALUE)))
 	{
 		printf("GetEnvironmentVariableA wrong size returned\n");
 		goto fail;
@@ -66,4 +70,3 @@ fail:
 	free(lpBuffer);
 	return rc;
 }
-

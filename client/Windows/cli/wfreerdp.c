@@ -42,8 +42,7 @@
 
 #include <shellapi.h>
 
-INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                   LPSTR lpCmdLine, int nCmdShow)
+INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
 	int status;
 	HANDLE thread;
@@ -51,15 +50,18 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	DWORD dwExitCode;
 	rdpContext* context;
 	rdpSettings* settings;
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
+	LPWSTR cmd;
+	char** argv = NULL;
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
 	int ret = 1;
 	int argc = 0, i;
 	LPWSTR* args = NULL;
-	LPWSTR cmd;
-	char** argv;
-	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
-	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
-	clientEntryPoints.Version = RDP_CLIENT_INTERFACE_VERSION;
+
+	WINPR_UNUSED(hInstance);
+	WINPR_UNUSED(hPrevInstance);
+	WINPR_UNUSED(lpCmdLine);
+	WINPR_UNUSED(nCmdShow);
+
 	RdpClientEntry(&clientEntryPoints);
 	context = freerdp_client_context_new(&clientEntryPoints);
 
@@ -73,10 +75,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 	args = CommandLineToArgvW(cmd, &argc);
 
-	if (!args)
+	if (!args || (argc <= 0))
 		goto out;
 
-	argv = calloc(argc, sizeof(char*));
+	argv = calloc((size_t)argc, sizeof(char*));
 
 	if (!argv)
 		goto out;
@@ -84,28 +86,28 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	for (i = 0; i < argc; i++)
 	{
 		int size = WideCharToMultiByte(CP_UTF8, 0, args[i], -1, NULL, 0, NULL, NULL);
-		argv[i] = calloc(size, sizeof(char));
+		if (size <= 0)
+			goto out;
+		argv[i] = calloc((size_t)size, sizeof(char));
 
 		if (!argv[i])
 			goto out;
 
-		if (WideCharToMultiByte(CP_UTF8, 0, args[i], -1, argv[i], size, NULL,
-		                        NULL) != size)
+		if (WideCharToMultiByte(CP_UTF8, 0, args[i], -1, argv[i], size, NULL, NULL) != size)
 			goto out;
 	}
 
 	settings = context->settings;
-	wfc = (wfContext*) context;
+	wfc = (wfContext*)context;
 
 	if (!settings || !wfc)
 		goto out;
 
-	status = freerdp_client_settings_parse_command_line(settings, argc, argv,
-	         FALSE);
+	status = freerdp_client_settings_parse_command_line(settings, argc, argv, FALSE);
 
 	if (status)
 	{
-		freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
+		ret = freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
 		goto out;
 	}
 
@@ -119,7 +121,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		if (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0)
 		{
 			GetExitCodeThread(thread, &dwExitCode);
-			ret = dwExitCode;
+			ret = (int)dwExitCode;
 		}
 	}
 

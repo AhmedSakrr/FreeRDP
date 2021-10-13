@@ -17,13 +17,16 @@ int TestPathAllocCombine(int argc, char* argv[])
 	HRESULT status;
 	LPTSTR PathOut;
 
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
 	/* Base Path: Backslash, More Path: No Backslash */
 
 	status = PathAllocCombine(testBasePathBackslash, testMorePathNoBackslash, 0, &PathOut);
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathAllocCombine status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathAllocCombine status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
@@ -41,13 +44,14 @@ int TestPathAllocCombine(int argc, char* argv[])
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathAllocCombine status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathAllocCombine status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
 	if (_tcscmp(PathOut, testPathOutMorePathBackslash) != 0)
 	{
-		_tprintf(_T("Path Mismatch 2: Actual: %s, Expected: %s\n"), PathOut, testPathOutMorePathBackslash);
+		_tprintf(_T("Path Mismatch 2: Actual: %s, Expected: %s\n"), PathOut,
+		         testPathOutMorePathBackslash);
 		return -1;
 	}
 
@@ -59,13 +63,14 @@ int TestPathAllocCombine(int argc, char* argv[])
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathAllocCombine status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathAllocCombine status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
 	if (_tcscmp(PathOut, testPathOutMorePathBackslash) != 0)
 	{
-		_tprintf(_T("Path Mismatch 3: Actual: %s, Expected: %s\n"), PathOut, testPathOutMorePathBackslash);
+		_tprintf(_T("Path Mismatch 3: Actual: %s, Expected: %s\n"), PathOut,
+		         testPathOutMorePathBackslash);
 		return -1;
 	}
 
@@ -77,7 +82,7 @@ int TestPathAllocCombine(int argc, char* argv[])
 
 	if (status != S_OK)
 	{
-		_tprintf(_T("PathAllocCombine status: 0x%08")_T(PRIX32)_T("\n"), status);
+		_tprintf(_T("PathAllocCombine status: 0x%08") _T(PRIX32) _T("\n"), status);
 		return -1;
 	}
 
@@ -91,4 +96,3 @@ int TestPathAllocCombine(int argc, char* argv[])
 
 	return 0;
 }
-

@@ -38,8 +38,23 @@ set(${MODULE_PREFIX}_SUN_SRCS
 	keyboard_sun.c
 	keyboard_sun.h)
 
+set(${MODULE_PREFIX}_APPLE_SRCS
+	keyboard_apple.c
+	keyboard_apple.h)
+
 if(CMAKE_SYSTEM_NAME MATCHES Solaris)
 	set(WITH_SUN true)
+endif()
+
+if(APPLE AND (NOT IOS))
+	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${${MODULE_PREFIX}_APPLE_SRCS})
+	find_library(CARBON Carbon)
+	freerdp_library_add(${CARBON})
+endif()
+
+if (APPLE)
+        FIND_LIBRARY(ç CoreFoundation REQUIRED)
+        freerdp_library_add(${CORE_FOUNDATION})
 endif()
 
 if(WITH_X11)

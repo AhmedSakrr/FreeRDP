@@ -35,43 +35,65 @@
 #else
 
 /* Shell clipboard formats */
-
-struct _FILEDESCRIPTOR {
-	DWORD    dwFlags;
-	BYTE     clsid[16];
-	BYTE     sizel[8];
-	BYTE     pointl[8];
-	DWORD    dwFileAttributes;
+struct _FILEDESCRIPTORW
+{
+	DWORD dwFlags;
+	CLSID clsid;
+	SIZEL sizel;
+	POINTL pointl;
+	DWORD dwFileAttributes;
 	FILETIME ftCreationTime;
 	FILETIME ftLastAccessTime;
 	FILETIME ftLastWriteTime;
-	DWORD    nFileSizeHigh;
-	DWORD    nFileSizeLow;
-	WCHAR    cFileName[260];
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	WCHAR cFileName[260];
+};
+typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
+
+/* Legacy definition, some types do not match the windows equivalent. */
+struct _FILEDESCRIPTOR
+{
+	DWORD dwFlags;
+	BYTE clsid[16];
+	BYTE sizel[8];
+	BYTE pointl[8];
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	WCHAR cFileName[260];
 };
 typedef struct _FILEDESCRIPTOR FILEDESCRIPTOR;
 
 /* FILEDESCRIPTOR.dwFlags */
-#define FD_ATTRIBUTES                   0x00000004
-#define FD_FILESIZE                     0x00000040
-#define FD_WRITESTIME                   0x00000020
-#define FD_SHOWPROGRESSUI               0x00004000
+typedef enum
+{
+	FD_CLSID = 0x00000001,
+	FD_SIZEPOINT = 0x00000002,
+	FD_ATTRIBUTES = 0x00000004,
+	FD_CREATETIME = 0x00000008,
+	FD_ACCESSTIME = 0x00000010,
+	FD_WRITESTIME = 0x00000020,
+	FD_FILESIZE = 0x00000040,
+	FD_PROGRESSUI = 0x00004000,
+	FD_LINKUI = 0x00008000,
+} FD_FLAGS;
+#define FD_UNICODE 0x80000000
 
-/* FILEDESCRIPTOR.dwFileAttributes */
-#define FILE_ATTRIBUTE_READONLY         0x00000001
-#define FILE_ATTRIBUTE_HIDDEN           0x00000002
-#define FILE_ATTRIBUTE_SYSTEM           0x00000004
-#define FILE_ATTRIBUTE_DIRECTORY        0x00000010
-#define FILE_ATTRIBUTE_ARCHIVE          0x00000020
-#define FILE_ATTRIBUTE_NORMAL           0x00000080
+/* Deprecated, here for compatibility */
+#define FD_SHOWPROGRESSUI FD_PROGRESSUI
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-WINPR_API BOOL GetUserProfileDirectoryA(HANDLE hToken, LPSTR lpProfileDir, LPDWORD lpcchSize);
+	WINPR_API BOOL GetUserProfileDirectoryA(HANDLE hToken, LPSTR lpProfileDir, LPDWORD lpcchSize);
 
-WINPR_API BOOL GetUserProfileDirectoryW(HANDLE hToken, LPWSTR lpProfileDir, LPDWORD lpcchSize);
+	WINPR_API BOOL GetUserProfileDirectoryW(HANDLE hToken, LPWSTR lpProfileDir, LPDWORD lpcchSize);
 
 #ifdef __cplusplus
 }

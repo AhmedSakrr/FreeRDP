@@ -38,13 +38,25 @@
 
 static BOOL freerdp_client_common_new(freerdp* instance, rdpContext* context)
 {
-	RDP_CLIENT_ENTRY_POINTS* pEntryPoints = instance->pClientEntryPoints;
+	RDP_CLIENT_ENTRY_POINTS* pEntryPoints;
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(context);
+
+	pEntryPoints = instance->pClientEntryPoints;
+	WINPR_ASSERT(pEntryPoints);
 	return IFCALLRESULT(TRUE, pEntryPoints->ClientNew, instance, context);
 }
 
 static void freerdp_client_common_free(freerdp* instance, rdpContext* context)
 {
-	RDP_CLIENT_ENTRY_POINTS* pEntryPoints = instance->pClientEntryPoints;
+	RDP_CLIENT_ENTRY_POINTS* pEntryPoints;
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(context);
+
+	pEntryPoints = instance->pClientEntryPoints;
+	WINPR_ASSERT(pEntryPoints);
 	IFCALL(pEntryPoints->ClientFree, instance, context);
 }
 
@@ -68,8 +80,7 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	instance->ContextSize = pEntryPoints->ContextSize;
 	instance->ContextNew = freerdp_client_common_new;
 	instance->ContextFree = freerdp_client_common_free;
-	instance->pClientEntryPoints = (RDP_CLIENT_ENTRY_POINTS*) malloc(
-	                                   pEntryPoints->Size);
+	instance->pClientEntryPoints = (RDP_CLIENT_ENTRY_POINTS*)malloc(pEntryPoints->Size);
 
 	if (!instance->pClientEntryPoints)
 		goto out_fail;
@@ -83,8 +94,8 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	context->instance = instance;
 	context->settings = instance->settings;
 
-	if (freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry,
-	                                    0) != CHANNEL_RC_OK)
+	if (freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0) !=
+	    CHANNEL_RC_OK)
 		goto out_fail2;
 
 	return context;
@@ -152,7 +163,7 @@ HANDLE freerdp_client_get_thread(rdpContext* context)
 	if (!context)
 		return NULL;
 
-	return ((rdpClientContext*) context)->thread;
+	return ((rdpClientContext*)context)->thread;
 }
 
 static BOOL freerdp_client_settings_post_process(rdpSettings* settings)
@@ -212,9 +223,8 @@ out_error:
 	return FALSE;
 }
 
-
-int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc,
-        char** argv, BOOL allowUnknown)
+int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc, char** argv,
+                                               BOOL allowUnknown)
 {
 	int status;
 
@@ -224,8 +234,8 @@ int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc,
 	if (!argv)
 		return -1;
 
-	status = freerdp_client_settings_parse_command_line_arguments(settings, argc,
-	         argv, allowUnknown);
+	status =
+	    freerdp_client_settings_parse_command_line_arguments(settings, argc, argv, allowUnknown);
 
 	if (status < 0)
 		return status;
@@ -235,11 +245,11 @@ int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc,
 	if (!freerdp_client_settings_post_process(settings))
 		status = -1;
 
+	WLog_DBG(TAG, "This is %s %s", freerdp_get_version_string(), freerdp_get_build_config());
 	return status;
 }
 
-int freerdp_client_settings_parse_connection_file(rdpSettings* settings,
-        const char* filename)
+int freerdp_client_settings_parse_connection_file(rdpSettings* settings, const char* filename)
 {
 	rdpFile* file;
 	int ret = -1;
@@ -260,8 +270,8 @@ out:
 	return ret;
 }
 
-int freerdp_client_settings_parse_connection_file_buffer(rdpSettings* settings,
-        const BYTE* buffer, size_t size)
+int freerdp_client_settings_parse_connection_file_buffer(rdpSettings* settings, const BYTE* buffer,
+                                                         size_t size)
 {
 	rdpFile* file;
 	int status = -1;
@@ -270,8 +280,8 @@ int freerdp_client_settings_parse_connection_file_buffer(rdpSettings* settings,
 	if (!file)
 		return -1;
 
-	if (freerdp_client_parse_rdp_file_buffer(file, buffer, size)
-	    && freerdp_client_populate_settings_from_rdp_file(file, settings))
+	if (freerdp_client_parse_rdp_file_buffer(file, buffer, size) &&
+	    freerdp_client_populate_settings_from_rdp_file(file, settings))
 	{
 		status = 0;
 	}
@@ -280,8 +290,8 @@ int freerdp_client_settings_parse_connection_file_buffer(rdpSettings* settings,
 	return status;
 }
 
-int freerdp_client_settings_write_connection_file(const rdpSettings* settings,
-        const char* filename, BOOL unicode)
+int freerdp_client_settings_write_connection_file(const rdpSettings* settings, const char* filename,
+                                                  BOOL unicode)
 {
 	rdpFile* file;
 	int ret = -1;
@@ -302,8 +312,7 @@ out:
 	return ret;
 }
 
-int freerdp_client_settings_parse_assistance_file(rdpSettings* settings,
-        int argc, char* argv[])
+int freerdp_client_settings_parse_assistance_file(rdpSettings* settings, int argc, char* argv[])
 {
 	int status, x;
 	int ret = -1;
@@ -349,30 +358,36 @@ out:
  *  @see rdp_server_accept_nego() and rdp_check_fds()
  *  @param instance - pointer to the rdp_freerdp structure that contains the connection settings
  *  @param username - unused
- *  @param password - on return: pointer to a character string that will be filled by the password entered by the user.
- *  				  Note that this character string will be allocated inside the function, and needs to be deallocated by the caller
- *  				  using free(), even in case this function fails.
+ *  @param password - on return: pointer to a character string that will be filled by the password
+ * entered by the user. Note that this character string will be allocated inside the function, and
+ * needs to be deallocated by the caller using free(), even in case this function fails.
  *  @param domain - unused
- *  @return TRUE if a password was successfully entered. See freerdp_passphrase_read() for more details.
+ *  @return TRUE if a password was successfully entered. See freerdp_passphrase_read() for more
+ * details.
  */
-static BOOL client_cli_authenticate_raw(freerdp* instance, BOOL gateway,
-                                        char** username,
+static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reason, char** username,
                                         char** password, char** domain)
 {
 	static const size_t password_size = 512;
-	const char* auth[] =
+	const char* auth[] = { "Username: ", "Domain:   ", "Password: " };
+	const char* gw[] = { "GatewayUsername: ", "GatewayDomain:   ", "GatewayPassword: " };
+	const char** prompt;
+
+	switch (reason)
 	{
-		"Username: ",
-		"Domain:   ",
-		"Password: "
-	};
-	const char* gw[] =
-	{
-		"GatewayUsername: ",
-		"GatewayDomain:   ",
-		"GatewayPassword: "
-	};
-	const char** prompt = (gateway) ? gw : auth;
+		case AUTH_NLA:
+		case AUTH_TLS:
+		case AUTH_RDP:
+			prompt = auth;
+			break;
+		case GW_AUTH_HTTP:
+		case GW_AUTH_RDG:
+		case GW_AUTH_RPC:
+			prompt = gw;
+			break;
+		default:
+			return FALSE;
+	}
 
 	if (!username || !password || !domain)
 		return FALSE;
@@ -436,8 +451,45 @@ fail:
 	return FALSE;
 }
 
-BOOL client_cli_authenticate(freerdp* instance, char** username,
-                             char** password, char** domain)
+BOOL client_cli_authenticate_ex(freerdp* instance, char** username, char** password, char** domain,
+                                rdp_auth_reason reason)
+{
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(username);
+	WINPR_ASSERT(password);
+	WINPR_ASSERT(domain);
+
+	if (instance->settings->SmartcardLogon)
+	{
+		WLog_INFO(TAG, "Authentication via smartcard");
+		return TRUE;
+	}
+
+	switch (reason)
+	{
+		case AUTH_NLA:
+			break;
+		case AUTH_TLS:
+			if ((*username) && (*password))
+				return TRUE;
+			break;
+		case AUTH_RDP:
+			if ((*username) && (*password))
+				return TRUE;
+			break;
+		case GW_AUTH_HTTP:
+		case GW_AUTH_RDG:
+		case GW_AUTH_RPC:
+			break;
+		default:
+			return FALSE;
+	}
+
+	return client_cli_authenticate_raw(instance, reason, username, password, domain);
+}
+
+#if defined(WITH_FREERDP_DEPRECATED)
+BOOL client_cli_authenticate(freerdp* instance, char** username, char** password, char** domain)
 {
 	if (instance->settings->SmartcardLogon)
 	{
@@ -448,11 +500,11 @@ BOOL client_cli_authenticate(freerdp* instance, char** username,
 	return client_cli_authenticate_raw(instance, FALSE, username, password, domain);
 }
 
-BOOL client_cli_gw_authenticate(freerdp* instance, char** username,
-                                char** password, char** domain)
+BOOL client_cli_gw_authenticate(freerdp* instance, char** username, char** password, char** domain)
 {
 	return client_cli_authenticate_raw(instance, TRUE, username, password, domain);
 }
+#endif
 
 static DWORD client_cli_accept_certificate(rdpSettings* settings)
 {
@@ -482,14 +534,17 @@ static DWORD client_cli_accept_certificate(rdpSettings* settings)
 		{
 			case 'y':
 			case 'Y':
+				fgetc(stdin);
 				return 1;
 
 			case 't':
 			case 'T':
+				fgetc(stdin);
 				return 2;
 
 			case 'n':
 			case 'N':
+				fgetc(stdin);
 				return 0;
 
 			default:
@@ -515,9 +570,9 @@ static DWORD client_cli_accept_certificate(rdpSettings* settings)
  *  @param host_mismatch Indicates the certificate host does not match.
  *  @return 1 if the certificate is trusted, 2 if temporary trusted, 0 otherwise.
  */
-DWORD client_cli_verify_certificate(freerdp* instance, const char* common_name,
-                                    const char* subject, const char* issuer,
-                                    const char* fingerprint, BOOL host_mismatch)
+#if defined(WITH_FREERDP_DEPRECATED)
+DWORD client_cli_verify_certificate(freerdp* instance, const char* common_name, const char* subject,
+                                    const char* issuer, const char* fingerprint, BOOL host_mismatch)
 {
 	WINPR_UNUSED(common_name);
 	WINPR_UNUSED(host_mismatch);
@@ -532,6 +587,7 @@ DWORD client_cli_verify_certificate(freerdp* instance, const char* common_name,
 	       "Please look at the OpenSSL documentation on how to add a private CA to the store.\n");
 	return client_cli_accept_certificate(instance->settings);
 }
+#endif
 
 /** Callback set in the rdp_freerdp structure, and used to make a certificate validation
  *  when the connection requires it.
@@ -549,23 +605,32 @@ DWORD client_cli_verify_certificate(freerdp* instance, const char* common_name,
  *  @return 1 if the certificate is trusted, 2 if temporary trusted, 0 otherwise.
  */
 DWORD client_cli_verify_certificate_ex(freerdp* instance, const char* host, UINT16 port,
-                                       const char* common_name,
-                                       const char* subject, const char* issuer,
-                                       const char* fingerprint, DWORD flags)
+                                       const char* common_name, const char* subject,
+                                       const char* issuer, const char* fingerprint, DWORD flags)
 {
 	const char* type = "RDP-Server";
-
 	if (flags & VERIFY_CERT_FLAG_GATEWAY)
 		type = "RDP-Gateway";
 
 	if (flags & VERIFY_CERT_FLAG_REDIRECT)
 		type = "RDP-Redirect";
 
-	printf("Certificate details for %s:%"PRIu16" (%s):\n", host, port, type);
+	printf("Certificate details for %s:%" PRIu16 " (%s):\n", host, port, type);
 	printf("\tCommon Name: %s\n", common_name);
 	printf("\tSubject:     %s\n", subject);
 	printf("\tIssuer:      %s\n", issuer);
-	printf("\tThumbprint:  %s\n", fingerprint);
+	/* Newer versions of FreeRDP allow exposing the whole PEM by setting
+	 * FreeRDP_CertificateCallbackPreferPEM to TRUE
+	 */
+	if (flags & VERIFY_CERT_FLAG_FP_IS_PEM)
+	{
+		printf("\t----------- Certificate --------------\n");
+		printf("%s\n", fingerprint);
+		printf("\t--------------------------------------\n");
+	}
+	else
+		printf("\tThumbprint:  %s\n", fingerprint);
+
 	printf("The above X.509 certificate could not be verified, possibly because you do not have\n"
 	       "the CA certificate in your certificate store, or the certificate has expired.\n"
 	       "Please look at the OpenSSL documentation on how to add a private CA to the store.\n");
@@ -587,16 +652,16 @@ DWORD client_cli_verify_certificate_ex(freerdp* instance, const char* host, UINT
  *  @param old_fingerprint
  *  @return 1 if the certificate is trusted, 2 if temporary trusted, 0 otherwise.
  */
-DWORD client_cli_verify_changed_certificate(freerdp* instance,
-        const char* common_name,
-        const char* subject, const char* issuer,
-        const char* fingerprint,
-        const char* old_subject, const char* old_issuer,
-        const char* old_fingerprint)
+#if defined(WITH_FREERDP_DEPRECATED)
+DWORD client_cli_verify_changed_certificate(freerdp* instance, const char* common_name,
+                                            const char* subject, const char* issuer,
+                                            const char* fingerprint, const char* old_subject,
+                                            const char* old_issuer, const char* old_fingerprint)
 {
 	WINPR_UNUSED(common_name);
 
-	printf("WARNING: This callback is deprecated, migrate to client_cli_verify_changed_certificate_ex\n");
+	printf("WARNING: This callback is deprecated, migrate to "
+	       "client_cli_verify_changed_certificate_ex\n");
 	printf("!!! Certificate has changed !!!\n");
 	printf("\n");
 	printf("New Certificate details:\n");
@@ -609,17 +674,20 @@ DWORD client_cli_verify_changed_certificate(freerdp* instance,
 	printf("\tIssuer: %s\n", old_issuer);
 	printf("\tThumbprint: %s\n", old_fingerprint);
 	printf("\n");
-	printf("The above X.509 certificate does not match the certificate used for previous connections.\n"
+	printf("The above X.509 certificate does not match the certificate used for previous "
+	       "connections.\n"
 	       "This may indicate that the certificate has been tampered with.\n"
 	       "Please contact the administrator of the RDP server and clarify.\n");
 	return client_cli_accept_certificate(instance->settings);
 }
+#endif
 
 /** Callback set in the rdp_freerdp structure, and used to make a certificate validation
  *  when a stored certificate does not match the remote counterpart.
  *  This function will actually be called by tls_verify_certificate().
  *  @see rdp_client_connect() and tls_connect()
- *  @param instance        pointer to the rdp_freerdp structure that contains the connection settings
+ *  @param instance        pointer to the rdp_freerdp structure that contains the connection
+ * settings
  *  @param host            The host currently connecting to
  *  @param port            The port currently connecting to
  *  @param common_name     The common name of the certificate, should match host or an alias of it
@@ -633,13 +701,11 @@ DWORD client_cli_verify_changed_certificate(freerdp* instance,
  *
  *  @return 1 if the certificate is trusted, 2 if temporary trusted, 0 otherwise.
  */
-DWORD client_cli_verify_changed_certificate_ex(freerdp* instance,
-        const char* host, UINT16 port,
-        const char* common_name,
-        const char* subject, const char* issuer,
-        const char* fingerprint,
-        const char* old_subject, const char* old_issuer,
-        const char* old_fingerprint, DWORD flags)
+DWORD client_cli_verify_changed_certificate_ex(freerdp* instance, const char* host, UINT16 port,
+                                               const char* common_name, const char* subject,
+                                               const char* issuer, const char* fingerprint,
+                                               const char* old_subject, const char* old_issuer,
+                                               const char* old_fingerprint, DWORD flags)
 {
 	const char* type = "RDP-Server";
 
@@ -649,23 +715,112 @@ DWORD client_cli_verify_changed_certificate_ex(freerdp* instance,
 	if (flags & VERIFY_CERT_FLAG_REDIRECT)
 		type = "RDP-Redirect";
 
-	printf("!!!Certificate for %s:%"PRIu16" (%s) has changed!!!\n", host, port, type);
+	printf("!!!Certificate for %s:%" PRIu16 " (%s) has changed!!!\n", host, port, type);
 	printf("\n");
 	printf("New Certificate details:\n");
 	printf("\tCommon Name: %s\n", common_name);
 	printf("\tSubject:     %s\n", subject);
 	printf("\tIssuer:      %s\n", issuer);
-	printf("\tThumbprint:  %s\n", fingerprint);
+	/* Newer versions of FreeRDP allow exposing the whole PEM by setting
+	 * FreeRDP_CertificateCallbackPreferPEM to TRUE
+	 */
+	if (flags & VERIFY_CERT_FLAG_FP_IS_PEM)
+	{
+		printf("\t----------- Certificate --------------\n");
+		printf("%s\n", fingerprint);
+		printf("\t--------------------------------------\n");
+	}
+	else
+		printf("\tThumbprint:  %s\n", fingerprint);
 	printf("\n");
 	printf("Old Certificate details:\n");
 	printf("\tSubject:     %s\n", old_subject);
 	printf("\tIssuer:      %s\n", old_issuer);
-	printf("\tThumbprint:  %s\n", old_fingerprint);
+	/* Newer versions of FreeRDP allow exposing the whole PEM by setting
+	 * FreeRDP_CertificateCallbackPreferPEM to TRUE
+	 */
+	if (flags & VERIFY_CERT_FLAG_FP_IS_PEM)
+	{
+		printf("\t----------- Certificate --------------\n");
+		printf("%s\n", old_fingerprint);
+		printf("\t--------------------------------------\n");
+	}
+	else
+		printf("\tThumbprint:  %s\n", old_fingerprint);
 	printf("\n");
-	printf("The above X.509 certificate does not match the certificate used for previous connections.\n"
+	if (flags & VERIFY_CERT_FLAG_MATCH_LEGACY_SHA1)
+	{
+		printf("\tA matching entry with legacy SHA1 was found in local known_hosts2 store.\n");
+		printf("\tIf you just upgraded from a FreeRDP version before 2.0 this is expected.\n");
+		printf("\tThe hashing algorithm has been upgraded from SHA1 to SHA256.\n");
+		printf("\tAll manually accepted certificates must be reconfirmed!\n");
+		printf("\n");
+	}
+	printf("The above X.509 certificate does not match the certificate used for previous "
+	       "connections.\n"
 	       "This may indicate that the certificate has been tampered with.\n"
 	       "Please contact the administrator of the RDP server and clarify.\n");
 	return client_cli_accept_certificate(instance->settings);
+}
+
+BOOL client_cli_present_gateway_message(freerdp* instance, UINT32 type, BOOL isDisplayMandatory,
+                                        BOOL isConsentMandatory, size_t length,
+                                        const WCHAR* message)
+{
+	char answer;
+	const char* msgType = (type == GATEWAY_MESSAGE_CONSENT) ? "Consent message" : "Service message";
+
+	if (!isDisplayMandatory && !isConsentMandatory)
+		return TRUE;
+
+	printf("%s:\n", msgType);
+#if defined(WIN32)
+	printf("%.*S\n", (int)length, message);
+#else
+	{
+		LPSTR msg;
+		if (ConvertFromUnicode(CP_UTF8, 0, message, (int)(length / 2), &msg, 0, NULL, NULL) < 1)
+		{
+			printf("Failed to convert message!\n");
+			return FALSE;
+		}
+		printf("%s\n", msg);
+		free(msg);
+	}
+#endif
+
+	while (isConsentMandatory)
+	{
+		printf("I understand and agree to the terms of this policy (Y/N) \n");
+		fflush(stdout);
+		answer = fgetc(stdin);
+
+		if (feof(stdin))
+		{
+			printf("\nError: Could not read answer from stdin.\n");
+			return FALSE;
+		}
+
+		switch (answer)
+		{
+			case 'y':
+			case 'Y':
+				fgetc(stdin);
+				return TRUE;
+
+			case 'n':
+			case 'N':
+				fgetc(stdin);
+				return FALSE;
+
+			default:
+				break;
+		}
+
+		printf("\n");
+	}
+
+	return TRUE;
 }
 
 BOOL client_auto_reconnect(freerdp* instance)
@@ -673,8 +828,9 @@ BOOL client_auto_reconnect(freerdp* instance)
 	return client_auto_reconnect_ex(instance, NULL);
 }
 
-BOOL client_auto_reconnect_ex(freerdp* instance, BOOL(*window_events)(freerdp* instance))
+BOOL client_auto_reconnect_ex(freerdp* instance, BOOL (*window_events)(freerdp* instance))
 {
+	UINT32 error;
 	UINT32 maxRetries;
 	UINT32 numRetries = 0;
 	rdpSettings* settings;
@@ -686,11 +842,21 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL(*window_events)(freerdp* i
 	maxRetries = settings->AutoReconnectMaxRetries;
 
 	/* Only auto reconnect on network disconnects. */
-	if (freerdp_error_info(instance) != 0)
-		return FALSE;
-
-	/* A network disconnect was detected */
-	WLog_INFO(TAG, "Network disconnect!");
+	error = freerdp_error_info(instance);
+	switch (error)
+	{
+		case ERRINFO_GRAPHICS_SUBSYSTEM_FAILED:
+			/* A network disconnect was detected */
+			WLog_WARN(TAG, "Disconnected by server hitting a bug or resource limit [%s]",
+			          freerdp_get_error_info_string(error));
+			break;
+		case ERRINFO_SUCCESS:
+			/* A network disconnect was detected */
+			WLog_INFO(TAG, "Network disconnect!");
+			break;
+		default:
+			return FALSE;
+	}
 
 	if (!settings->AutoReconnectionEnabled)
 	{
@@ -710,7 +876,7 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL(*window_events)(freerdp* i
 		}
 
 		/* Attempt the next reconnect */
-		WLog_INFO(TAG, "Attempting reconnect (%"PRIu32" of %"PRIu32")", numRetries, maxRetries);
+		WLog_INFO(TAG, "Attempting reconnect (%" PRIu32 " of %" PRIu32 ")", numRetries, maxRetries);
 
 		if (freerdp_reconnect(instance))
 			return TRUE;
@@ -727,5 +893,3 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL(*window_events)(freerdp* i
 	WLog_ERR(TAG, "Maximum reconnect retries exceeded");
 	return FALSE;
 }
-
-

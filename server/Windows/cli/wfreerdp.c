@@ -40,8 +40,7 @@ int IDcount = 0;
 
 BOOL CALLBACK moncb(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData)
 {
-	WLog_DBG(TAG, "%d\t(%ld, %ld), (%ld, %ld)",
-	         IDcount, lprcMonitor->left, lprcMonitor->top,
+	WLog_DBG(TAG, "%d\t(%ld, %ld), (%ld, %ld)", IDcount, lprcMonitor->left, lprcMonitor->top,
 	         lprcMonitor->right, lprcMonitor->bottom);
 	IDcount++;
 	return TRUE;
@@ -54,16 +53,15 @@ int main(int argc, char* argv[])
 	wfServer* server;
 	server = wfreerdp_server_new();
 	set_screen_id(0);
-	//handle args
+	// handle args
 	index = 1;
 	errno = 0;
 
 	while (index < argc)
 	{
-		//first the args that will cause the program to terminate
+		// first the args that will cause the program to terminate
 		if (strcmp("--list-screens", argv[index]) == 0)
 		{
-			_TCHAR name[128];
 			int width;
 			int height;
 			int bpp;
@@ -71,9 +69,10 @@ int main(int argc, char* argv[])
 			WLog_INFO(TAG, "Detecting screens...");
 			WLog_INFO(TAG, "ID\tResolution\t\tName (Interface)");
 
-			for (i = 0; ; i++)
+			for (i = 0;; i++)
 			{
-				if (get_screen_info(i, name, &width, &height, &bpp) != 0)
+				_TCHAR name[128] = { 0 };
+				if (get_screen_info(i, name, ARRAYSIZE(name), &width, &height, &bpp) != 0)
 				{
 					if ((width * height * bpp) == 0)
 						continue;
@@ -136,7 +135,6 @@ int main(int argc, char* argv[])
 
 	if (screen_selected == FALSE)
 	{
-		_TCHAR name[128];
 		int width;
 		int height;
 		int bpp;
@@ -145,9 +143,10 @@ int main(int argc, char* argv[])
 		WLog_INFO(TAG, "Detecting screens...");
 		WLog_INFO(TAG, "ID\tResolution\t\tName (Interface)");
 
-		for (i = 0; ; i++)
+		for (i = 0;; i++)
 		{
-			if (get_screen_info(i, name, &width, &height, &bpp) != 0)
+			_TCHAR name[128] = { 0 };
+			if (get_screen_info(i, name, ARRAYSIZE(name), &width, &height, &bpp) != 0)
 			{
 				if ((width * height * bpp) == 0)
 					continue;

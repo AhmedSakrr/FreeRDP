@@ -34,7 +34,8 @@
  * TPDUs are defined in:
  *
  * http://www.itu.int/rec/T-REC-X.224-199511-I/
- * X.224: Information technology - Open Systems Interconnection - Protocol for providing the connection-mode transport service
+ * X.224: Information technology - Open Systems Interconnection - Protocol for providing the
+ * connection-mode transport service
  *
  * RDP uses only TPDUs of class 0, the "simple class" defined in section 8 of X.224
  *
@@ -64,6 +65,8 @@
  * |         ...        |
  */
 
+static void tpdu_write_header(wStream* s, UINT16 length, BYTE code);
+
 /**
  * Read TPDU header.
  * @param s stream
@@ -71,13 +74,19 @@
  * @return TPDU length indicator (LI)
  */
 
-BOOL tpdu_read_header(wStream* s, BYTE* code, BYTE* li)
+BOOL tpdu_read_header(wStream* s, BYTE* code, BYTE* li, UINT16 tpktlength)
 {
 	if (Stream_GetRemainingLength(s) < 3)
 		return FALSE;
 
-	Stream_Read_UINT8(s, *li); /* LI */
+	Stream_Read_UINT8(s, *li);   /* LI */
 	Stream_Read_UINT8(s, *code); /* Code */
+
+	if (*li + 4 > tpktlength)
+	{
+		WLog_ERR(TAG, "tpdu length %" PRIu8 " > tpkt header length %" PRIu16, *li, tpktlength);
+		return FALSE;
+	}
 
 	if (*code == X224_TPDU_DATA)
 	{
@@ -105,7 +114,7 @@ BOOL tpdu_read_header(wStream* s, BYTE* code, BYTE* li)
 void tpdu_write_header(wStream* s, UINT16 length, BYTE code)
 {
 	Stream_Write_UINT8(s, length); /* LI */
-	Stream_Write_UINT8(s, code); /* code */
+	Stream_Write_UINT8(s, code);   /* code */
 
 	if (code == X224_TPDU_DATA)
 	{
@@ -115,7 +124,7 @@ void tpdu_write_header(wStream* s, UINT16 length, BYTE code)
 	{
 		Stream_Write_UINT16(s, 0); /* DST-REF */
 		Stream_Write_UINT16(s, 0); /* SRC-REF */
-		Stream_Write_UINT8(s, 0); /* Class 0 */
+		Stream_Write_UINT8(s, 0);  /* Class 0 */
 	}
 }
 
@@ -125,16 +134,16 @@ void tpdu_write_header(wStream* s, UINT16 length, BYTE code)
  * @return length indicator (LI)
  */
 
-BOOL tpdu_read_connection_request(wStream* s, BYTE* li)
+BOOL tpdu_read_connection_request(wStream* s, BYTE* li, UINT16 tpktlength)
 {
 	BYTE code;
 
-	if (!tpdu_read_header(s, &code, li))
+	if (!tpdu_read_header(s, &code, li, tpktlength))
 		return FALSE;
 
 	if (code != X224_TPDU_CONNECTION_REQUEST)
 	{
-		WLog_ERR(TAG,  "Error: expected X224_TPDU_CONNECTION_REQUEST");
+		WLog_ERR(TAG, "Error: expected X224_TPDU_CONNECTION_REQUEST");
 		return FALSE;
 	}
 
@@ -158,7 +167,7 @@ void tpdu_write_connection_request(wStream* s, UINT16 length)
  * @return length indicator (LI)
  */
 
-BOOL tpdu_read_connection_confirm(wStream* s, BYTE* li)
+BOOL tpdu_read_connection_confirm(wStream* s, BYTE* li, UINT16 tpktlength)
 {
 	BYTE code;
 	size_t position;
@@ -167,12 +176,12 @@ BOOL tpdu_read_connection_confirm(wStream* s, BYTE* li)
 	/* save the position to determine the number of bytes read */
 	position = Stream_GetPosition(s);
 
-	if (!tpdu_read_header(s, &code, li))
+	if (!tpdu_read_header(s, &code, li, tpktlength))
 		return FALSE;
 
 	if (code != X224_TPDU_CONNECTION_CONFIRM)
 	{
-		WLog_ERR(TAG,  "Error: expected X224_TPDU_CONNECTION_CONFIRM");
+		WLog_ERR(TAG, "Error: expected X224_TPDU_CONNECTION_CONFIRM");
 		return FALSE;
 	}
 	/*
@@ -184,7 +193,7 @@ BOOL tpdu_read_connection_confirm(wStream* s, BYTE* li)
 	 */
 	bytes_read = (Stream_GetPosition(s) - position) - 1;
 
-	return (Stream_GetRemainingLength(s) >= (size_t) (*li - bytes_read));
+	return (Stream_GetRemainingLength(s) >= (size_t)(*li - bytes_read));
 }
 
 /**
@@ -224,12 +233,12 @@ void tpdu_write_data(wStream* s)
  * @param s stream
  */
 
-BOOL tpdu_read_data(wStream* s, UINT16* LI)
+BOOL tpdu_read_data(wStream* s, UINT16* LI, UINT16 tpktlength)
 {
 	BYTE code;
 	BYTE li;
 
-	if (!tpdu_read_header(s, &code, &li))
+	if (!tpdu_read_header(s, &code, &li, tpktlength))
 		return FALSE;
 
 	if (code != X224_TPDU_DATA)

@@ -59,7 +59,7 @@ typedef struct _AudinWinmmDevice
 static void CALLBACK waveInProc(HWAVEIN hWaveIn, UINT uMsg, DWORD_PTR dwInstance,
                                 DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) dwInstance;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)dwInstance;
 	PWAVEHDR pWaveHdr;
 	UINT error = CHANNEL_RC_OK;
 	MMRESULT mmResult;
@@ -74,8 +74,8 @@ static void CALLBACK waveInProc(HWAVEIN hWaveIn, UINT uMsg, DWORD_PTR dwInstance
 
 			if (WHDR_DONE == (WHDR_DONE & pWaveHdr->dwFlags))
 			{
-				if (pWaveHdr->dwBytesRecorded
-				    && !(WaitForSingleObject(winmm->stopEvent, 0) == WAIT_OBJECT_0))
+				if (pWaveHdr->dwBytesRecorded &&
+				    !(WaitForSingleObject(winmm->stopEvent, 0) == WAIT_OBJECT_0))
 				{
 					AUDIO_FORMAT format;
 					format.cbSize = winmm->pwfx_cur->cbSize;
@@ -86,8 +86,8 @@ static void CALLBACK waveInProc(HWAVEIN hWaveIn, UINT uMsg, DWORD_PTR dwInstance
 					format.wBitsPerSample = winmm->pwfx_cur->wBitsPerSample;
 					format.wFormatTag = winmm->pwfx_cur->wFormatTag;
 
-					if ((error = winmm->receive(&format, pWaveHdr->lpData, pWaveHdr->dwBytesRecorded,
-					                            winmm->user_data)))
+					if ((error = winmm->receive(&format, pWaveHdr->lpData,
+					                            pWaveHdr->dwBytesRecorded, winmm->user_data)))
 						break;
 
 					mmResult = waveInAddBuffer(hWaveIn, pWaveHdr, sizeof(WAVEHDR));
@@ -110,34 +110,84 @@ static void CALLBACK waveInProc(HWAVEIN hWaveIn, UINT uMsg, DWORD_PTR dwInstance
 		setChannelError(winmm->rdpcontext, error, "waveInProc reported an error");
 }
 
+static BOOL log_mmresult(AudinWinmmDevice* winmm, const char* what, MMRESULT result)
+{
+	if (result != MMSYSERR_NOERROR)
+	{
+		CHAR buffer[8192] = { 0 };
+		CHAR msg[8192] = { 0 };
+		CHAR cmsg[8192] = { 0 };
+		waveInGetErrorTextA(result, buffer, sizeof(buffer));
+
+		_snprintf(msg, sizeof(msg) - 1, "%s failed. %" PRIu32 " [%s]", what, result, buffer);
+		_snprintf(cmsg, sizeof(cmsg) - 1, "audin_winmm_thread_func reported an error '%s'", msg);
+		WLog_Print(winmm->log, WLOG_DEBUG, "%s", msg);
+		if (winmm->rdpcontext)
+			setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR, cmsg);
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static BOOL test_format_supported(const PWAVEFORMATEX pwfx)
+{
+	MMRESULT rc;
+	WAVEINCAPSA caps = { 0 };
+
+	rc = waveInGetDevCapsA(WAVE_MAPPER, &caps, sizeof(caps));
+	if (rc != MMSYSERR_NOERROR)
+		return FALSE;
+
+	switch (pwfx->nChannels)
+	{
+		case 1:
+			if ((caps.dwFormats &
+			     (WAVE_FORMAT_1M08 | WAVE_FORMAT_2M08 | WAVE_FORMAT_4M08 | WAVE_FORMAT_96M08 |
+			      WAVE_FORMAT_1M16 | WAVE_FORMAT_2M16 | WAVE_FORMAT_4M16 | WAVE_FORMAT_96M16)) == 0)
+				return FALSE;
+			break;
+		case 2:
+			if ((caps.dwFormats &
+			     (WAVE_FORMAT_1S08 | WAVE_FORMAT_2S08 | WAVE_FORMAT_4S08 | WAVE_FORMAT_96S08 |
+			      WAVE_FORMAT_1S16 | WAVE_FORMAT_2S16 | WAVE_FORMAT_4S16 | WAVE_FORMAT_96S16)) == 0)
+				return FALSE;
+			break;
+		default:
+			return FALSE;
+	}
+
+	rc = waveInOpen(NULL, WAVE_MAPPER, pwfx, 0, 0,
+	                WAVE_FORMAT_QUERY | WAVE_MAPPED_DEFAULT_COMMUNICATION_DEVICE);
+	return (rc == MMSYSERR_NOERROR);
+}
+
 static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 {
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) arg;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)arg;
 	char* buffer;
 	int size, i;
-	WAVEHDR waveHdr[4];
+	WAVEHDR waveHdr[4] = { 0 };
 	DWORD status;
 	MMRESULT rc;
 
 	if (!winmm->hWaveIn)
 	{
-		if (MMSYSERR_NOERROR != waveInOpen(&winmm->hWaveIn, WAVE_MAPPER, winmm->pwfx_cur,
-		                                   (DWORD_PTR)waveInProc, (DWORD_PTR)winmm, CALLBACK_FUNCTION))
-		{
-			if (winmm->rdpcontext)
-				setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-				                "audin_winmm_thread_func reported an error");
-
+		MMRESULT rc;
+		rc = waveInOpen(&winmm->hWaveIn, WAVE_MAPPER, winmm->pwfx_cur, (DWORD_PTR)waveInProc,
+		                (DWORD_PTR)winmm,
+		                CALLBACK_FUNCTION | WAVE_MAPPED_DEFAULT_COMMUNICATION_DEVICE);
+		if (!log_mmresult(winmm, "waveInOpen", rc))
 			return ERROR_INTERNAL_ERROR;
-		}
 	}
 
-	size = (winmm->pwfx_cur->wBitsPerSample * winmm->pwfx_cur->nChannels * winmm->frames_per_packet +
-	        7) / 8;
+	size =
+	    (winmm->pwfx_cur->wBitsPerSample * winmm->pwfx_cur->nChannels * winmm->frames_per_packet +
+	     7) /
+	    8;
 
 	for (i = 0; i < 4; i++)
 	{
-		buffer = (char*) malloc(size);
+		buffer = (char*)malloc(size);
 
 		if (!buffer)
 			return CHANNEL_RC_NO_MEMORY;
@@ -147,36 +197,22 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 		waveHdr[i].lpData = buffer;
 		rc = waveInPrepareHeader(winmm->hWaveIn, &waveHdr[i], sizeof(waveHdr[i]));
 
-		if (MMSYSERR_NOERROR != rc)
+		if (!log_mmresult(winmm, "waveInPrepareHeader", rc))
 		{
-			WLog_Print(winmm->log, WLOG_DEBUG, "waveInPrepareHeader failed. %"PRIu32"", rc);
 
-			if (winmm->rdpcontext)
-				setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-				                "audin_winmm_thread_func reported an error");
 		}
 
 		rc = waveInAddBuffer(winmm->hWaveIn, &waveHdr[i], sizeof(waveHdr[i]));
 
-		if (MMSYSERR_NOERROR != rc)
+		if (!log_mmresult(winmm, "waveInAddBuffer", rc))
 		{
-			WLog_Print(winmm->log, WLOG_DEBUG, "waveInAddBuffer failed. %"PRIu32"", rc);
-
-			if (winmm->rdpcontext)
-				setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-				                "audin_winmm_thread_func reported an error");
 		}
 	}
 
 	rc = waveInStart(winmm->hWaveIn);
 
-	if (MMSYSERR_NOERROR != rc)
+	if (!log_mmresult(winmm, "waveInStart", rc))
 	{
-		WLog_Print(winmm->log, WLOG_DEBUG, "waveInStart failed. %"PRIu32"", rc);
-
-		if (winmm->rdpcontext)
-			setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-			                "audin_winmm_thread_func reported an error");
 	}
 
 	status = WaitForSingleObject(winmm->stopEvent, INFINITE);
@@ -192,26 +228,17 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 
 	rc = waveInReset(winmm->hWaveIn);
 
-	if (MMSYSERR_NOERROR != rc)
+	if (!log_mmresult(winmm, "waveInReset", rc))
 	{
-		WLog_Print(winmm->log, WLOG_DEBUG, "waveInReset failed. %"PRIu32"", rc);
-
-		if (winmm->rdpcontext)
-			setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-			                "audin_winmm_thread_func reported an error");
 	}
 
 	for (i = 0; i < 4; i++)
 	{
 		rc = waveInUnprepareHeader(winmm->hWaveIn, &waveHdr[i], sizeof(waveHdr[i]));
 
-		if (MMSYSERR_NOERROR != rc)
+		if (!log_mmresult(winmm, "waveInUnprepareHeader", rc))
 		{
-			WLog_Print(winmm->log, WLOG_DEBUG, "waveInUnprepareHeader failed. %"PRIu32"", rc);
 
-			if (winmm->rdpcontext)
-				setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-				                "audin_winmm_thread_func reported an error");
 		}
 
 		free(waveHdr[i].lpData);
@@ -219,13 +246,8 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 
 	rc = waveInClose(winmm->hWaveIn);
 
-	if (MMSYSERR_NOERROR != rc)
+	if (!log_mmresult(winmm, "waveInClose", rc))
 	{
-		WLog_Print(winmm->log, WLOG_DEBUG, "waveInClose failed. %"PRIu32"", rc);
-
-		if (winmm->rdpcontext)
-			setChannelError(winmm->rdpcontext, ERROR_INTERNAL_ERROR,
-			                "audin_winmm_thread_func reported an error");
 	}
 
 	winmm->hWaveIn = NULL;
@@ -240,7 +262,7 @@ static DWORD WINAPI audin_winmm_thread_func(LPVOID arg)
 static UINT audin_winmm_free(IAudinDevice* device)
 {
 	UINT32 i;
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
 
 	if (!winmm)
 		return ERROR_INVALID_PARAMETER;
@@ -265,7 +287,7 @@ static UINT audin_winmm_close(IAudinDevice* device)
 {
 	DWORD status;
 	UINT error = CHANNEL_RC_OK;
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
 
 	if (!winmm)
 		return ERROR_INVALID_PARAMETER;
@@ -276,7 +298,8 @@ static UINT audin_winmm_close(IAudinDevice* device)
 	if (status == WAIT_FAILED)
 	{
 		error = GetLastError();
-		WLog_Print(winmm->log, WLOG_ERROR, "WaitForSingleObject failed with error %"PRIu32"!", error);
+		WLog_Print(winmm->log, WLOG_ERROR, "WaitForSingleObject failed with error %" PRIu32 "!",
+		           error);
 		return error;
 	}
 
@@ -298,7 +321,7 @@ static UINT audin_winmm_set_format(IAudinDevice* device, const AUDIO_FORMAT* for
                                    UINT32 FramesPerPacket)
 {
 	UINT32 i;
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
 
 	if (!winmm || !format)
 		return ERROR_INVALID_PARAMETER;
@@ -307,25 +330,45 @@ static UINT audin_winmm_set_format(IAudinDevice* device, const AUDIO_FORMAT* for
 
 	for (i = 0; i < winmm->cFormats; i++)
 	{
-		if (winmm->ppwfx[i]->wFormatTag == format->wFormatTag
-		    && winmm->ppwfx[i]->nChannels == format->nChannels
-		    && winmm->ppwfx[i]->wBitsPerSample == format->wBitsPerSample)
+		const PWAVEFORMATEX ppwfx = winmm->ppwfx[i];
+		if ((ppwfx->wFormatTag == format->wFormatTag) && (ppwfx->nChannels == format->nChannels) &&
+		    (ppwfx->wBitsPerSample == format->wBitsPerSample) &&
+		    (ppwfx->nSamplesPerSec == format->nSamplesPerSec))
 		{
-			winmm->pwfx_cur = winmm->ppwfx[i];
-			break;
+			/* BUG: Many devices report to support stereo recording but fail here.
+			 *      Ensure we always use mono. */
+			if (ppwfx->nChannels > 1)
+			{
+				ppwfx->nChannels = 1;
+			}
+
+			if (ppwfx->nBlockAlign != 2)
+			{
+				ppwfx->nBlockAlign = 2;
+			}
+			if (!test_format_supported(ppwfx))
+				return ERROR_INVALID_PARAMETER;
+			winmm->pwfx_cur = ppwfx;
+			return CHANNEL_RC_OK;
 		}
 	}
 
-	return CHANNEL_RC_OK;
+	return ERROR_INVALID_PARAMETER;
 }
 
 static BOOL audin_winmm_format_supported(IAudinDevice* device, const AUDIO_FORMAT* format)
 {
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
 	PWAVEFORMATEX pwfx;
 	BYTE* data;
 
 	if (!winmm || !format)
+		return FALSE;
+
+	if (format->wFormatTag != WAVE_FORMAT_PCM)
+		return FALSE;
+
+	if (format->nChannels != 1)
 		return FALSE;
 
 	pwfx = (PWAVEFORMATEX)malloc(sizeof(WAVEFORMATEX) + format->cbSize);
@@ -342,29 +385,27 @@ static BOOL audin_winmm_format_supported(IAudinDevice* device, const AUDIO_FORMA
 	data = (BYTE*)pwfx + sizeof(WAVEFORMATEX);
 	memcpy(data, format->data, format->cbSize);
 
-	if (pwfx->wFormatTag == WAVE_FORMAT_PCM)
+	pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
+
+	if (!test_format_supported(pwfx))
+		goto fail;
+
+	if (winmm->cFormats >= winmm->ppwfx_size)
 	{
-		pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
+		PWAVEFORMATEX* tmp_ppwfx;
+		tmp_ppwfx = realloc(winmm->ppwfx, sizeof(PWAVEFORMATEX) * winmm->ppwfx_size * 2);
 
-		if (MMSYSERR_NOERROR == waveInOpen(NULL, WAVE_MAPPER, pwfx, 0, 0, WAVE_FORMAT_QUERY))
-		{
-			if (winmm->cFormats >= winmm->ppwfx_size)
-			{
-				PWAVEFORMATEX* tmp_ppwfx;
-				tmp_ppwfx = realloc(winmm->ppwfx, sizeof(PWAVEFORMATEX) * winmm->ppwfx_size * 2);
+		if (!tmp_ppwfx)
+			goto fail;
 
-				if (!tmp_ppwfx)
-					return FALSE;
-
-				winmm->ppwfx_size *= 2;
-				winmm->ppwfx = tmp_ppwfx;
-			}
-
-			winmm->ppwfx[winmm->cFormats++] = pwfx;
-			return TRUE;
-		}
+		winmm->ppwfx_size *= 2;
+		winmm->ppwfx = tmp_ppwfx;
 	}
 
+	winmm->ppwfx[winmm->cFormats++] = pwfx;
+	return TRUE;
+
+fail:
 	free(pwfx);
 	return FALSE;
 }
@@ -376,7 +417,7 @@ static BOOL audin_winmm_format_supported(IAudinDevice* device, const AUDIO_FORMA
  */
 static UINT audin_winmm_open(IAudinDevice* device, AudinReceive receive, void* user_data)
 {
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
 
 	if (!winmm || !receive || !user_data)
 		return ERROR_INVALID_PARAMETER;
@@ -390,8 +431,7 @@ static UINT audin_winmm_open(IAudinDevice* device, AudinReceive receive, void* u
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	if (!(winmm->thread = CreateThread(NULL, 0,
-	                                   audin_winmm_thread_func, winmm, 0, NULL)))
+	if (!(winmm->thread = CreateThread(NULL, 0, audin_winmm_thread_func, winmm, 0, NULL)))
 	{
 		WLog_Print(winmm->log, WLOG_ERROR, "CreateThread failed!");
 		CloseHandle(winmm->stopEvent);
@@ -401,12 +441,6 @@ static UINT audin_winmm_open(IAudinDevice* device, AudinReceive receive, void* u
 
 	return CHANNEL_RC_OK;
 }
-
-static COMMAND_LINE_ARGUMENT_A audin_winmm_args[] =
-{
-	{ "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>", NULL, NULL, -1, NULL, "audio device name" },
-	{ NULL, 0, NULL, NULL, NULL, -1, NULL, NULL }
-};
 
 /**
  * Function description
@@ -418,10 +452,15 @@ static UINT audin_winmm_parse_addin_args(AudinWinmmDevice* device, ADDIN_ARGV* a
 	int status;
 	DWORD flags;
 	COMMAND_LINE_ARGUMENT_A* arg;
-	AudinWinmmDevice* winmm = (AudinWinmmDevice*) device;
-	flags = COMMAND_LINE_SIGIL_NONE | COMMAND_LINE_SEPARATOR_COLON | COMMAND_LINE_IGN_UNKNOWN_KEYWORD;
-	status = CommandLineParseArgumentsA(args->argc, args->argv, audin_winmm_args, flags,
-	                                    winmm, NULL, NULL);
+	AudinWinmmDevice* winmm = (AudinWinmmDevice*)device;
+	COMMAND_LINE_ARGUMENT_A audin_winmm_args[] = { { "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>",
+		                                             NULL, NULL, -1, NULL, "audio device name" },
+		                                           { NULL, 0, NULL, NULL, NULL, -1, NULL, NULL } };
+
+	flags =
+	    COMMAND_LINE_SIGIL_NONE | COMMAND_LINE_SEPARATOR_COLON | COMMAND_LINE_IGN_UNKNOWN_KEYWORD;
+	status = CommandLineParseArgumentsA(args->argc, args->argv, audin_winmm_args, flags, winmm,
+	                                    NULL, NULL);
 	arg = audin_winmm_args;
 
 	do
@@ -429,8 +468,7 @@ static UINT audin_winmm_parse_addin_args(AudinWinmmDevice* device, ADDIN_ARGV* a
 		if (!(arg->Flags & COMMAND_LINE_VALUE_PRESENT))
 			continue;
 
-		CommandLineSwitchStart(arg)
-		CommandLineSwitchCase(arg, "dev")
+		CommandLineSwitchStart(arg) CommandLineSwitchCase(arg, "dev")
 		{
 			winmm->device_name = _strdup(arg->Value);
 
@@ -441,16 +479,15 @@ static UINT audin_winmm_parse_addin_args(AudinWinmmDevice* device, ADDIN_ARGV* a
 			}
 		}
 		CommandLineSwitchEnd(arg)
-	}
-	while ((arg = CommandLineFindNextArgumentA(arg)) != NULL);
+	} while ((arg = CommandLineFindNextArgumentA(arg)) != NULL);
 
 	return CHANNEL_RC_OK;
 }
 
 #ifdef BUILTIN_CHANNELS
-#define freerdp_audin_client_subsystem_entry	winmm_freerdp_audin_client_subsystem_entry
+#define freerdp_audin_client_subsystem_entry winmm_freerdp_audin_client_subsystem_entry
 #else
-#define freerdp_audin_client_subsystem_entry	FREERDP_API freerdp_audin_client_subsystem_entry
+#define freerdp_audin_client_subsystem_entry FREERDP_API freerdp_audin_client_subsystem_entry
 #endif
 
 /**
@@ -463,7 +500,14 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 	ADDIN_ARGV* args;
 	AudinWinmmDevice* winmm;
 	UINT error;
-	winmm = (AudinWinmmDevice*) calloc(1, sizeof(AudinWinmmDevice));
+
+	if (waveInGetNumDevs() == 0)
+	{
+		WLog_Print(WLog_Get(TAG), WLOG_ERROR, "No microphone available!");
+		return ERROR_DEVICE_NOT_AVAILABLE;
+	}
+
+	winmm = (AudinWinmmDevice*)calloc(1, sizeof(AudinWinmmDevice));
 
 	if (!winmm)
 	{
@@ -482,8 +526,8 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 
 	if ((error = audin_winmm_parse_addin_args(winmm, args)))
 	{
-		WLog_Print(winmm->log, WLOG_ERROR, "audin_winmm_parse_addin_args failed with error %"PRIu32"!",
-		           error);
+		WLog_Print(winmm->log, WLOG_ERROR,
+		           "audin_winmm_parse_addin_args failed with error %" PRIu32 "!", error);
 		goto error_out;
 	}
 
@@ -500,7 +544,7 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 	}
 
 	winmm->ppwfx_size = 10;
-	winmm->ppwfx = malloc(sizeof(PWAVEFORMATEX) * winmm->ppwfx_size);
+	winmm->ppwfx = calloc(winmm->ppwfx_size, sizeof(PWAVEFORMATEX));
 
 	if (!winmm->ppwfx)
 	{
@@ -509,9 +553,10 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 		goto error_out;
 	}
 
-	if ((error = pEntryPoints->pRegisterAudinDevice(pEntryPoints->plugin, (IAudinDevice*) winmm)))
+	if ((error = pEntryPoints->pRegisterAudinDevice(pEntryPoints->plugin, &winmm->iface)))
 	{
-		WLog_Print(winmm->log, WLOG_ERROR, "RegisterAudinDevice failed with error %"PRIu32"!", error);
+		WLog_Print(winmm->log, WLOG_ERROR, "RegisterAudinDevice failed with error %" PRIu32 "!",
+		           error);
 		goto error_out;
 	}
 

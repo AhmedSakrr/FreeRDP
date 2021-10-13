@@ -44,15 +44,14 @@ struct rail_plugin
 	RailClientContext* context;
 
 	wLog* log;
-	HANDLE thread;
-	wStream* data_in;
 	void* InitHandle;
 	DWORD OpenHandle;
-	wMessageQueue* queue;
+	void* MsgsHandle;
 	rdpContext* rdpcontext;
 	DWORD channelBuildNumber;
 	DWORD channelFlags;
 	RAIL_CLIENT_STATUS_ORDER clientStatus;
+	BOOL sendHandshake;
 };
 typedef struct rail_plugin railPlugin;
 

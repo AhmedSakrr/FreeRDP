@@ -76,6 +76,11 @@ typedef LONG_PTR SSIZE_T;
 #define VOID void
 #endif
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#endif
+
 #ifndef _WIN32
 
 #define CALLBACK
@@ -268,6 +273,20 @@ typedef LONG HRESULT;
 typedef LONG SCODE;
 typedef SCODE* PSCODE;
 
+typedef struct _POINTL /* ptl  */
+{
+	LONG x;
+	LONG y;
+} POINTL, *PPOINTL;
+
+typedef struct tagSIZE
+{
+	LONG cx;
+	LONG cy;
+} SIZE, *PSIZE, *LPSIZE;
+
+typedef SIZE SIZEL;
+
 typedef struct _GUID
 {
 	UINT32 Data1;
@@ -275,6 +294,7 @@ typedef struct _GUID
 	UINT16 Data3;
 	BYTE Data4[8];
 } GUID, UUID, *PGUID, *LPGUID, *LPCGUID;
+typedef GUID CLSID;
 
 typedef struct _LUID
 {
@@ -309,7 +329,7 @@ typedef union _ULARGE_INTEGER
 	{
 		DWORD LowPart;
 		DWORD HighPart;
-	};
+	} DUMMYSTRUCTNAME;
 
 	struct
 	{
@@ -326,7 +346,7 @@ typedef union _LARGE_INTEGER
 	{
 		DWORD LowPart;
 		LONG  HighPart;
-	};
+	} DUMMYSTRUCTNAME;
 
 	struct
 	{
@@ -367,7 +387,7 @@ typedef struct _RPC_SID
 	UCHAR Revision;
 	UCHAR SubAuthorityCount;
 	RPC_SID_IDENTIFIER_AUTHORITY IdentifierAuthority;
-	ULONG SubAuthority[];
+	ULONG SubAuthority[1];
 } RPC_SID, *PRPC_SID, *PSID;
 
 typedef struct _ACL
@@ -552,6 +572,10 @@ typedef const BYTE* LPCBYTE;
 #ifndef _WIN32
 #define _fseeki64(fp, offset, origin) fseeko(fp, offset, origin)
 #define _ftelli64(fp) ftello(fp)
+#endif
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
 #endif
 
 #endif /* WINPR_WTYPES_H */

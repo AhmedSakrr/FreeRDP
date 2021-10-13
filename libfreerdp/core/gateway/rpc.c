@@ -49,31 +49,17 @@
 
 #define TAG FREERDP_TAG("core.gateway.rpc")
 
-static const char* PTYPE_STRINGS[] =
-{
-	"PTYPE_REQUEST",
-	"PTYPE_PING",
-	"PTYPE_RESPONSE",
-	"PTYPE_FAULT",
-	"PTYPE_WORKING",
-	"PTYPE_NOCALL",
-	"PTYPE_REJECT",
-	"PTYPE_ACK",
-	"PTYPE_CL_CANCEL",
-	"PTYPE_FACK",
-	"PTYPE_CANCEL_ACK",
-	"PTYPE_BIND",
-	"PTYPE_BIND_ACK",
-	"PTYPE_BIND_NAK",
-	"PTYPE_ALTER_CONTEXT",
-	"PTYPE_ALTER_CONTEXT_RESP",
-	"PTYPE_RPC_AUTH_3",
-	"PTYPE_SHUTDOWN",
-	"PTYPE_CO_CANCEL",
-	"PTYPE_ORPHANED",
-	"PTYPE_RTS",
-	""
-};
+static const char* PTYPE_STRINGS[] = { "PTYPE_REQUEST",       "PTYPE_PING",
+	                                   "PTYPE_RESPONSE",      "PTYPE_FAULT",
+	                                   "PTYPE_WORKING",       "PTYPE_NOCALL",
+	                                   "PTYPE_REJECT",        "PTYPE_ACK",
+	                                   "PTYPE_CL_CANCEL",     "PTYPE_FACK",
+	                                   "PTYPE_CANCEL_ACK",    "PTYPE_BIND",
+	                                   "PTYPE_BIND_ACK",      "PTYPE_BIND_NAK",
+	                                   "PTYPE_ALTER_CONTEXT", "PTYPE_ALTER_CONTEXT_RESP",
+	                                   "PTYPE_RPC_AUTH_3",    "PTYPE_SHUTDOWN",
+	                                   "PTYPE_CO_CANCEL",     "PTYPE_ORPHANED",
+	                                   "PTYPE_RTS",           "" };
 
 /**
  * [MS-RPCH]: Remote Procedure Call over HTTP Protocol Specification:
@@ -104,62 +90,63 @@ static const char* PTYPE_STRINGS[] =
 
 void rpc_pdu_header_print(rpcconn_hdr_t* header)
 {
-	WLog_INFO(TAG,  "rpc_vers: %"PRIu8"", header->common.rpc_vers);
-	WLog_INFO(TAG,  "rpc_vers_minor: %"PRIu8"", header->common.rpc_vers_minor);
+	WLog_INFO(TAG, "rpc_vers: %" PRIu8 "", header->common.rpc_vers);
+	WLog_INFO(TAG, "rpc_vers_minor: %" PRIu8 "", header->common.rpc_vers_minor);
 
 	if (header->common.ptype > PTYPE_RTS)
-		WLog_INFO(TAG,  "ptype: %s (%"PRIu8")", "PTYPE_UNKNOWN", header->common.ptype);
+		WLog_INFO(TAG, "ptype: %s (%" PRIu8 ")", "PTYPE_UNKNOWN", header->common.ptype);
 	else
-		WLog_INFO(TAG,  "ptype: %s (%"PRIu8")", PTYPE_STRINGS[header->common.ptype], header->common.ptype);
+		WLog_INFO(TAG, "ptype: %s (%" PRIu8 ")", PTYPE_STRINGS[header->common.ptype],
+		          header->common.ptype);
 
-	WLog_INFO(TAG,  "pfc_flags (0x%02"PRIX8") = {", header->common.pfc_flags);
+	WLog_INFO(TAG, "pfc_flags (0x%02" PRIX8 ") = {", header->common.pfc_flags);
 
 	if (header->common.pfc_flags & PFC_FIRST_FRAG)
-		WLog_INFO(TAG,  " PFC_FIRST_FRAG");
+		WLog_INFO(TAG, " PFC_FIRST_FRAG");
 
 	if (header->common.pfc_flags & PFC_LAST_FRAG)
-		WLog_INFO(TAG,  " PFC_LAST_FRAG");
+		WLog_INFO(TAG, " PFC_LAST_FRAG");
 
 	if (header->common.pfc_flags & PFC_PENDING_CANCEL)
-		WLog_INFO(TAG,  " PFC_PENDING_CANCEL");
+		WLog_INFO(TAG, " PFC_PENDING_CANCEL");
 
 	if (header->common.pfc_flags & PFC_RESERVED_1)
-		WLog_INFO(TAG,  " PFC_RESERVED_1");
+		WLog_INFO(TAG, " PFC_RESERVED_1");
 
 	if (header->common.pfc_flags & PFC_CONC_MPX)
-		WLog_INFO(TAG,  " PFC_CONC_MPX");
+		WLog_INFO(TAG, " PFC_CONC_MPX");
 
 	if (header->common.pfc_flags & PFC_DID_NOT_EXECUTE)
-		WLog_INFO(TAG,  " PFC_DID_NOT_EXECUTE");
+		WLog_INFO(TAG, " PFC_DID_NOT_EXECUTE");
 
 	if (header->common.pfc_flags & PFC_OBJECT_UUID)
-		WLog_INFO(TAG,  " PFC_OBJECT_UUID");
+		WLog_INFO(TAG, " PFC_OBJECT_UUID");
 
-	WLog_INFO(TAG,  " }");
-	WLog_INFO(TAG,  "packed_drep[4]: %02"PRIX8" %02"PRIX8" %02"PRIX8" %02"PRIX8"",
+	WLog_INFO(TAG, " }");
+	WLog_INFO(TAG, "packed_drep[4]: %02" PRIX8 " %02" PRIX8 " %02" PRIX8 " %02" PRIX8 "",
 	          header->common.packed_drep[0], header->common.packed_drep[1],
 	          header->common.packed_drep[2], header->common.packed_drep[3]);
-	WLog_INFO(TAG,  "frag_length: %"PRIu16"", header->common.frag_length);
-	WLog_INFO(TAG,  "auth_length: %"PRIu16"", header->common.auth_length);
-	WLog_INFO(TAG,  "call_id: %"PRIu32"", header->common.call_id);
+	WLog_INFO(TAG, "frag_length: %" PRIu16 "", header->common.frag_length);
+	WLog_INFO(TAG, "auth_length: %" PRIu16 "", header->common.auth_length);
+	WLog_INFO(TAG, "call_id: %" PRIu32 "", header->common.call_id);
 
 	if (header->common.ptype == PTYPE_RESPONSE)
 	{
-		WLog_INFO(TAG,  "alloc_hint: %"PRIu32"", header->response.alloc_hint);
-		WLog_INFO(TAG,  "p_cont_id: %"PRIu16"", header->response.p_cont_id);
-		WLog_INFO(TAG,  "cancel_count: %"PRIu8"", header->response.cancel_count);
-		WLog_INFO(TAG,  "reserved: %"PRIu8"", header->response.reserved);
+		WLog_INFO(TAG, "alloc_hint: %" PRIu32 "", header->response.alloc_hint);
+		WLog_INFO(TAG, "p_cont_id: %" PRIu16 "", header->response.p_cont_id);
+		WLog_INFO(TAG, "cancel_count: %" PRIu8 "", header->response.cancel_count);
+		WLog_INFO(TAG, "reserved: %" PRIu8 "", header->response.reserved);
 	}
 }
 
-void rpc_pdu_header_init(rdpRpc* rpc, rpcconn_hdr_t* header)
+void rpc_pdu_header_init(rdpRpc* rpc, rpcconn_common_hdr_t* header)
 {
-	header->common.rpc_vers = rpc->rpc_vers;
-	header->common.rpc_vers_minor = rpc->rpc_vers_minor;
-	header->common.packed_drep[0] = rpc->packed_drep[0];
-	header->common.packed_drep[1] = rpc->packed_drep[1];
-	header->common.packed_drep[2] = rpc->packed_drep[2];
-	header->common.packed_drep[3] = rpc->packed_drep[3];
+	header->rpc_vers = rpc->rpc_vers;
+	header->rpc_vers_minor = rpc->rpc_vers_minor;
+	header->packed_drep[0] = rpc->packed_drep[0];
+	header->packed_drep[1] = rpc->packed_drep[1];
+	header->packed_drep[2] = rpc->packed_drep[2];
+	header->packed_drep[3] = rpc->packed_drep[3];
 }
 
 UINT32 rpc_offset_align(UINT32* offset, UINT32 alignment)
@@ -262,7 +249,7 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, BYTE* buffer, UINT32* offset, UINT32* l
 	UINT32 sec_trailer_offset;
 	rpc_sec_trailer* sec_trailer;
 	*offset = RPC_COMMON_FIELDS_LENGTH;
-	header = ((rpcconn_hdr_t*) buffer);
+	header = ((rpcconn_hdr_t*)buffer);
 
 	switch (header->common.ptype)
 	{
@@ -283,7 +270,7 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, BYTE* buffer, UINT32* offset, UINT32* l
 			break;
 
 		default:
-			WLog_ERR(TAG, "Unknown PTYPE: 0x%02"PRIX8"", header->common.ptype);
+			WLog_ERR(TAG, "Unknown PTYPE: 0x%02" PRIX8 "", header->common.ptype);
 			return FALSE;
 	}
 
@@ -292,16 +279,15 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, BYTE* buffer, UINT32* offset, UINT32* l
 
 	if (header->common.ptype == PTYPE_REQUEST)
 	{
-		UINT32 sec_trailer_offset;
-		sec_trailer_offset = header->common.frag_length - header->common.auth_length - 8;
-		*length = sec_trailer_offset - *offset;
+		UINT32 csec_trailer_offset = header->common.frag_length - header->common.auth_length - 8;
+		*length = csec_trailer_offset - *offset;
 		return TRUE;
 	}
 
 	frag_length = header->common.frag_length;
 	auth_length = header->common.auth_length;
 	sec_trailer_offset = frag_length - auth_length - 8;
-	sec_trailer = (rpc_sec_trailer*) &buffer[sec_trailer_offset];
+	sec_trailer = (rpc_sec_trailer*)&buffer[sec_trailer_offset];
 	auth_pad_length = sec_trailer->auth_pad_length;
 #if 0
 	WLog_DBG(TAG,
@@ -319,8 +305,8 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, BYTE* buffer, UINT32* offset, UINT32* l
 
 	if ((frag_length - (sec_trailer_offset + 8)) != auth_length)
 	{
-		WLog_ERR(TAG, "invalid auth_length: actual: %"PRIu32", expected: %"PRIu32"", auth_length,
-		         (frag_length - (sec_trailer_offset + 8)));
+		WLog_ERR(TAG, "invalid auth_length: actual: %" PRIu32 ", expected: %" PRIu32 "",
+		         auth_length, (frag_length - (sec_trailer_offset + 8)));
 	}
 
 	*length = frag_length - auth_length - 24 - 8 - auth_pad_length;
@@ -413,7 +399,7 @@ static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const c
 
 	settings = client->context->settings;
 	channel->ntlm = ntlm_new();
-	rts_generate_cookie((BYTE*) &channel->Cookie);
+	rts_generate_cookie((BYTE*)&channel->Cookie);
 	channel->client = client;
 
 	if (!channel->ntlm)
@@ -430,11 +416,11 @@ static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const c
 	    !http_context_set_uri(http, "/rpc/rpcproxy.dll?localhost:3388") ||
 	    !http_context_set_accept(http, "application/rpc") ||
 	    !http_context_set_cache_control(http, "no-cache") ||
-	    !http_context_set_connection(http, "Keep-Alive") || !http_context_set_user_agent(http, "MSRPC") ||
+	    !http_context_set_connection(http, "Keep-Alive") ||
+	    !http_context_set_user_agent(http, "MSRPC") ||
 	    !http_context_set_host(http, settings->GatewayHostname) ||
-	    !http_context_set_pragma(http,
-	                             "ResourceTypeUuid=44e265dd-7daf-42cd-8560-3cdb6e7a2729, "
-	                             "SessionId=fbd9c34f-397d-471d-a109-1b08cc554624"))
+	    !http_context_set_pragma(http, "ResourceTypeUuid=44e265dd-7daf-42cd-8560-3cdb6e7a2729, "
+	                                   "SessionId=fbd9c34f-397d-471d-a109-1b08cc554624"))
 		return -1;
 
 	return 1;
@@ -457,7 +443,7 @@ static int rpc_in_channel_init(rdpRpc* rpc, RpcInChannel* inChannel)
 static RpcInChannel* rpc_in_channel_new(rdpRpc* rpc)
 {
 	RpcInChannel* inChannel = NULL;
-	inChannel = (RpcInChannel*) calloc(1, sizeof(RpcInChannel));
+	inChannel = (RpcInChannel*)calloc(1, sizeof(RpcInChannel));
 
 	if (inChannel)
 	{
@@ -551,7 +537,7 @@ static int rpc_out_channel_init(rdpRpc* rpc, RpcOutChannel* outChannel)
 RpcOutChannel* rpc_out_channel_new(rdpRpc* rpc)
 {
 	RpcOutChannel* outChannel = NULL;
-	outChannel = (RpcOutChannel*) calloc(1, sizeof(RpcOutChannel));
+	outChannel = (RpcOutChannel*)calloc(1, sizeof(RpcOutChannel));
 
 	if (outChannel)
 	{
@@ -561,8 +547,8 @@ RpcOutChannel* rpc_out_channel_new(rdpRpc* rpc)
 	return outChannel;
 }
 
-BOOL rpc_virtual_connection_transition_to_state(rdpRpc* rpc,
-        RpcVirtualConnection* connection, VIRTUAL_CONNECTION_STATE state)
+BOOL rpc_virtual_connection_transition_to_state(rdpRpc* rpc, RpcVirtualConnection* connection,
+                                                VIRTUAL_CONNECTION_STATE state)
 {
 	const char* str = "VIRTUAL_CONNECTION_STATE_UNKNOWN";
 
@@ -604,13 +590,13 @@ BOOL rpc_virtual_connection_transition_to_state(rdpRpc* rpc,
 static RpcVirtualConnection* rpc_virtual_connection_new(rdpRpc* rpc)
 {
 	RpcVirtualConnection* connection;
-	connection = (RpcVirtualConnection*) calloc(1, sizeof(RpcVirtualConnection));
+	connection = (RpcVirtualConnection*)calloc(1, sizeof(RpcVirtualConnection));
 
 	if (!connection)
 		return NULL;
 
-	rts_generate_cookie((BYTE*) & (connection->Cookie));
-	rts_generate_cookie((BYTE*) & (connection->AssociationGroupId));
+	rts_generate_cookie((BYTE*)&(connection->Cookie));
+	rts_generate_cookie((BYTE*)&(connection->AssociationGroupId));
 	connection->State = VIRTUAL_CONNECTION_STATE_INITIAL;
 	connection->DefaultInChannel = rpc_in_channel_new(rpc);
 
@@ -660,11 +646,11 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, int timeout)
 
 	context = channel->client->context;
 	settings = context->settings;
-	proxyUsername = settings->ProxyUsername;
-	proxyPassword = settings->ProxyPassword;
+	proxyUsername = freerdp_settings_get_string(settings, FreeRDP_ProxyUsername);
+	proxyPassword = freerdp_settings_get_string(settings, FreeRDP_ProxyPassword);
 	{
-		sockfd = freerdp_tcp_connect(context, settings, channel->client->host,
-		                             channel->client->port, timeout);
+		sockfd =
+		    freerdp_tcp_connect(context, channel->client->host, channel->client->port, timeout);
 
 		if (sockfd < 0)
 			return FALSE;
@@ -696,8 +682,8 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, int timeout)
 
 	if (channel->client->isProxy)
 	{
-		if (!proxy_connect(settings, bufferedBio, proxyUsername, proxyPassword,	settings->GatewayHostname,
-		                   settings->GatewayPort))
+		if (!proxy_connect(settings, bufferedBio, proxyUsername, proxyPassword,
+		                   settings->GatewayHostname, settings->GatewayPort))
 		{
 			BIO_free_all(bufferedBio);
 			return FALSE;
@@ -719,13 +705,11 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, int timeout)
 	{
 		if (tlsStatus < 0)
 		{
-			if (!freerdp_get_last_error(context))
-				freerdp_set_last_error(context, FREERDP_ERROR_TLS_CONNECT_FAILED);
+			freerdp_set_last_error_if_not(context, FREERDP_ERROR_TLS_CONNECT_FAILED);
 		}
 		else
 		{
-			if (!freerdp_get_last_error(context))
-				freerdp_set_last_error(context, FREERDP_ERROR_CONNECT_CANCELLED);
+			freerdp_set_last_error_if_not(context, FREERDP_ERROR_CONNECT_CANCELLED);
 		}
 
 		return FALSE;
@@ -814,7 +798,7 @@ int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, int timeout)
 
 	rpc_out_channel_transition_to_state(outChannel, CLIENT_OUT_CHANNEL_STATE_CONNECTED);
 
-	if (!rpc_ncacn_http_ntlm_init(context, (RpcChannel*) outChannel))
+	if (!rpc_ncacn_http_ntlm_init(context, (RpcChannel*)outChannel))
 		return FALSE;
 
 	/* Send OUT Channel Request */
@@ -855,15 +839,18 @@ BOOL rpc_connect(rdpRpc* rpc, int timeout)
 
 rdpRpc* rpc_new(rdpTransport* transport)
 {
-	rdpRpc* rpc = (rdpRpc*) calloc(1, sizeof(rdpRpc));
+	rdpContext* context = transport_get_context(transport);
+	rdpRpc* rpc;
+
+	WINPR_ASSERT(context);
+
+	rpc = (rdpRpc*)calloc(1, sizeof(rdpRpc));
 
 	if (!rpc)
 		return NULL;
 
 	rpc->State = RPC_CLIENT_STATE_INITIAL;
 	rpc->transport = transport;
-	rpc->settings = transport->settings;
-	rpc->context = transport->context;
 	rpc->SendSeqNum = 0;
 	rpc->ntlm = ntlm_new();
 
@@ -888,7 +875,7 @@ rdpRpc* rpc_new(rdpTransport* transport)
 	rpc->CurrentKeepAliveInterval = rpc->KeepAliveInterval;
 	rpc->CurrentKeepAliveTime = 0;
 	rpc->CallId = 2;
-	rpc->client = rpc_client_new(rpc->context, rpc->max_recv_frag);
+	rpc->client = rpc_client_new(context, rpc->max_recv_frag);
 
 	if (!rpc->client)
 		goto out_free;

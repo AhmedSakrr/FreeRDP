@@ -24,12 +24,28 @@
 #endif
 
 #include <winpr/crt.h>
+#include <winpr/assert.h>
 #include <winpr/print.h>
 
 #include <freerdp/channels/log.h>
 #include <freerdp/client/encomsp.h>
 
 #include "encomsp_main.h"
+
+struct encomsp_plugin
+{
+	CHANNEL_DEF channelDef;
+	CHANNEL_ENTRY_POINTS_FREERDP_EX channelEntryPoints;
+
+	EncomspClientContext* context;
+
+	HANDLE thread;
+	wStream* data_in;
+	void* InitHandle;
+	DWORD OpenHandle;
+	wMessageQueue* queue;
+	rdpContext* rdpcontext;
+};
 
 /**
  * Function description
@@ -44,7 +60,7 @@ static UINT encomsp_read_header(wStream* s, ENCOMSP_ORDER_HEADER* header)
 		return ERROR_INVALID_DATA;
 	}
 
-	Stream_Read_UINT16(s, header->Type); /* Type (2 bytes) */
+	Stream_Read_UINT16(s, header->Type);   /* Type (2 bytes) */
 	Stream_Read_UINT16(s, header->Length); /* Length (2 bytes) */
 	return CHANNEL_RC_OK;
 }
@@ -54,9 +70,9 @@ static UINT encomsp_read_header(wStream* s, ENCOMSP_ORDER_HEADER* header)
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_write_header(wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_write_header(wStream* s, const ENCOMSP_ORDER_HEADER* header)
 {
-	Stream_Write_UINT16(s, header->Type); /* Type (2 bytes) */
+	Stream_Write_UINT16(s, header->Type);   /* Type (2 bytes) */
 	Stream_Write_UINT16(s, header->Length); /* Length (2 bytes) */
 	return CHANNEL_RC_OK;
 }
@@ -80,11 +96,11 @@ static UINT encomsp_read_unicode_string(wStream* s, ENCOMSP_UNICODE_STRING* str)
 
 	if (str->cchString > 1024)
 	{
-		WLog_ERR(TAG, "cchString was %"PRIu16" but has to be < 1025!", str->cchString);
+		WLog_ERR(TAG, "cchString was %" PRIu16 " but has to be < 1025!", str->cchString);
 		return ERROR_INVALID_DATA;
 	}
 
-	if (Stream_GetRemainingLength(s) < (size_t)(str->cchString * 2))
+	if (Stream_GetRemainingLength(s) / sizeof(WCHAR) < str->cchString)
 	{
 		WLog_ERR(TAG, "Not enough data!");
 		return ERROR_INVALID_DATA;
@@ -94,11 +110,10 @@ static UINT encomsp_read_unicode_string(wStream* s, ENCOMSP_UNICODE_STRING* str)
 	return CHANNEL_RC_OK;
 }
 
-static EncomspClientContext* encomsp_get_client_interface(
-    encomspPlugin* encomsp)
+static EncomspClientContext* encomsp_get_client_interface(encomspPlugin* encomsp)
 {
 	EncomspClientContext* pInterface;
-	pInterface = (EncomspClientContext*) encomsp->channelEntryPoints.pInterface;
+	pInterface = (EncomspClientContext*)encomsp->channelEntryPoints.pInterface;
 	return pInterface;
 }
 
@@ -112,20 +127,24 @@ static UINT encomsp_virtual_channel_write(encomspPlugin* encomsp, wStream* s)
 	UINT status;
 
 	if (!encomsp)
+	{
+		Stream_Free(s, TRUE);
 		return ERROR_INVALID_HANDLE;
+	}
 
 #if 0
 	WLog_INFO(TAG, "EncomspWrite (%"PRIuz")", Stream_Length(s));
 	winpr_HexDump(Stream_Buffer(s), Stream_Length(s));
 #endif
-	status = encomsp->channelEntryPoints.pVirtualChannelWriteEx(encomsp->InitHandle,
-	         encomsp->OpenHandle,
-	         Stream_Buffer(s), (UINT32) Stream_Length(s), s);
+	status = encomsp->channelEntryPoints.pVirtualChannelWriteEx(
+	    encomsp->InitHandle, encomsp->OpenHandle, Stream_Buffer(s), (UINT32)Stream_Length(s), s);
 
 	if (status != CHANNEL_RC_OK)
-		WLog_ERR(TAG,  "VirtualChannelWriteEx failed with %s [%08"PRIX32"]",
+	{
+		Stream_Free(s, TRUE);
+		WLog_ERR(TAG, "VirtualChannelWriteEx failed with %s [%08" PRIX32 "]",
 		         WTSErrorToString(status), status);
-
+	}
 	return status;
 }
 
@@ -135,9 +154,9 @@ static UINT encomsp_virtual_channel_write(encomspPlugin* encomsp, wStream* s)
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT encomsp_recv_filter_updated_pdu(encomspPlugin* encomsp, wStream* s,
-        ENCOMSP_ORDER_HEADER* header)
+                                            const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_FILTER_UPDATED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -146,7 +165,10 @@ static UINT encomsp_recv_filter_updated_pdu(encomspPlugin* encomsp, wStream* s,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 1)
@@ -156,7 +178,7 @@ static UINT encomsp_recv_filter_updated_pdu(encomspPlugin* encomsp, wStream* s,
 	}
 
 	Stream_Read_UINT8(s, pdu.Flags); /* Flags (1 byte) */
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -178,7 +200,7 @@ static UINT encomsp_recv_filter_updated_pdu(encomspPlugin* encomsp, wStream* s,
 	IFCALLRET(context->FilterUpdated, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->FilterUpdated failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->FilterUpdated failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -188,10 +210,10 @@ static UINT encomsp_recv_filter_updated_pdu(encomspPlugin* encomsp, wStream* s,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_application_created_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_application_created_pdu(encomspPlugin* encomsp, wStream* s,
+                                                 const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_APPLICATION_CREATED_PDU pdu;
 	UINT error;
@@ -200,25 +222,28 @@ static UINT encomsp_recv_application_created_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
-	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
-
 	if (Stream_GetRemainingLength(s) < 6)
 	{
 		WLog_ERR(TAG, "Not enough data!");
 		return ERROR_INVALID_DATA;
 	}
 
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
+	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
+
 	Stream_Read_UINT16(s, pdu.Flags); /* Flags (2 bytes) */
 	Stream_Read_UINT32(s, pdu.AppId); /* AppId (4 bytes) */
 
 	if ((error = encomsp_read_unicode_string(s, &(pdu.Name))))
 	{
-		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %" PRIu32 "", error);
 		return error;
 	}
 
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -240,7 +265,7 @@ static UINT encomsp_recv_application_created_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->ApplicationCreated, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ApplicationCreated failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->ApplicationCreated failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -250,10 +275,10 @@ static UINT encomsp_recv_application_created_pdu(encomspPlugin* encomsp,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp, wStream* s,
+                                                 const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_APPLICATION_REMOVED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -262,7 +287,10 @@ static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 4)
@@ -272,7 +300,7 @@ static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp,
 	}
 
 	Stream_Read_UINT32(s, pdu.AppId); /* AppId (4 bytes) */
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -294,7 +322,7 @@ static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->ApplicationRemoved, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ApplicationRemoved failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->ApplicationRemoved failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -305,9 +333,9 @@ static UINT encomsp_recv_application_removed_pdu(encomspPlugin* encomsp,
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT encomsp_recv_window_created_pdu(encomspPlugin* encomsp, wStream* s,
-        ENCOMSP_ORDER_HEADER* header)
+                                            const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_WINDOW_CREATED_PDU pdu;
 	UINT error;
@@ -316,7 +344,10 @@ static UINT encomsp_recv_window_created_pdu(encomspPlugin* encomsp, wStream* s,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 10)
@@ -331,11 +362,11 @@ static UINT encomsp_recv_window_created_pdu(encomspPlugin* encomsp, wStream* s,
 
 	if ((error = encomsp_read_unicode_string(s, &(pdu.Name))))
 	{
-		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %" PRIu32 "", error);
 		return error;
 	}
 
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -357,7 +388,7 @@ static UINT encomsp_recv_window_created_pdu(encomspPlugin* encomsp, wStream* s,
 	IFCALLRET(context->WindowCreated, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->WindowCreated failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->WindowCreated failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -368,9 +399,9 @@ static UINT encomsp_recv_window_created_pdu(encomspPlugin* encomsp, wStream* s,
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT encomsp_recv_window_removed_pdu(encomspPlugin* encomsp, wStream* s,
-        ENCOMSP_ORDER_HEADER* header)
+                                            const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_WINDOW_REMOVED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -379,7 +410,10 @@ static UINT encomsp_recv_window_removed_pdu(encomspPlugin* encomsp, wStream* s,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 4)
@@ -389,7 +423,7 @@ static UINT encomsp_recv_window_removed_pdu(encomspPlugin* encomsp, wStream* s,
 	}
 
 	Stream_Read_UINT32(s, pdu.WndId); /* WndId (4 bytes) */
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -411,7 +445,7 @@ static UINT encomsp_recv_window_removed_pdu(encomspPlugin* encomsp, wStream* s,
 	IFCALLRET(context->WindowRemoved, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->WindowRemoved failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->WindowRemoved failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -422,9 +456,9 @@ static UINT encomsp_recv_window_removed_pdu(encomspPlugin* encomsp, wStream* s,
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT encomsp_recv_show_window_pdu(encomspPlugin* encomsp, wStream* s,
-        ENCOMSP_ORDER_HEADER* header)
+                                         const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_SHOW_WINDOW_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -433,7 +467,10 @@ static UINT encomsp_recv_show_window_pdu(encomspPlugin* encomsp, wStream* s,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 4)
@@ -443,7 +480,7 @@ static UINT encomsp_recv_show_window_pdu(encomspPlugin* encomsp, wStream* s,
 	}
 
 	Stream_Read_UINT32(s, pdu.WndId); /* WndId (4 bytes) */
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -465,7 +502,7 @@ static UINT encomsp_recv_show_window_pdu(encomspPlugin* encomsp, wStream* s,
 	IFCALLRET(context->ShowWindow, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ShowWindow failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->ShowWindow failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -475,10 +512,10 @@ static UINT encomsp_recv_show_window_pdu(encomspPlugin* encomsp, wStream* s,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp, wStream* s,
+                                                 const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_PARTICIPANT_CREATED_PDU pdu;
 	UINT error;
@@ -487,7 +524,10 @@ static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 10)
@@ -497,16 +537,16 @@ static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp,
 	}
 
 	Stream_Read_UINT32(s, pdu.ParticipantId); /* ParticipantId (4 bytes) */
-	Stream_Read_UINT32(s, pdu.GroupId); /* GroupId (4 bytes) */
-	Stream_Read_UINT16(s, pdu.Flags); /* Flags (2 bytes) */
+	Stream_Read_UINT32(s, pdu.GroupId);       /* GroupId (4 bytes) */
+	Stream_Read_UINT16(s, pdu.Flags);         /* Flags (2 bytes) */
 
 	if ((error = encomsp_read_unicode_string(s, &(pdu.FriendlyName))))
 	{
-		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "encomsp_read_unicode_string failed with error %" PRIu32 "", error);
 		return error;
 	}
 
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -528,7 +568,7 @@ static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->ParticipantCreated, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ParticipantCreated failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->ParticipantCreated failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -538,10 +578,10 @@ static UINT encomsp_recv_participant_created_pdu(encomspPlugin* encomsp,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_participant_removed_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_participant_removed_pdu(encomspPlugin* encomsp, wStream* s,
+                                                 const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end;
 	EncomspClientContext* context;
 	ENCOMSP_PARTICIPANT_REMOVED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -550,19 +590,19 @@ static UINT encomsp_recv_participant_removed_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
-	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
-
 	if (Stream_GetRemainingLength(s) < 12)
 	{
 		WLog_ERR(TAG, "Not enough data!");
 		return ERROR_INVALID_DATA;
 	}
 
+	beg = (Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
+
 	Stream_Read_UINT32(s, pdu.ParticipantId); /* ParticipantId (4 bytes) */
-	Stream_Read_UINT32(s, pdu.DiscType); /* DiscType (4 bytes) */
-	Stream_Read_UINT32(s, pdu.DiscCode); /* DiscCode (4 bytes) */
-	end = (int) Stream_GetPosition(s);
+	Stream_Read_UINT32(s, pdu.DiscType);      /* DiscType (4 bytes) */
+	Stream_Read_UINT32(s, pdu.DiscCode);      /* DiscCode (4 bytes) */
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -584,7 +624,7 @@ static UINT encomsp_recv_participant_removed_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->ParticipantRemoved, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ParticipantRemoved failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->ParticipantRemoved failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -594,10 +634,10 @@ static UINT encomsp_recv_participant_removed_pdu(encomspPlugin* encomsp,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_change_participant_control_level_pdu(
-    encomspPlugin* encomsp, wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_change_participant_control_level_pdu(encomspPlugin* encomsp, wStream* s,
+                                                              const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_CHANGE_PARTICIPANT_CONTROL_LEVEL_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -606,7 +646,10 @@ static UINT encomsp_recv_change_participant_control_level_pdu(
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
 
 	if (Stream_GetRemainingLength(s) < 6)
@@ -615,9 +658,9 @@ static UINT encomsp_recv_change_participant_control_level_pdu(
 		return ERROR_INVALID_DATA;
 	}
 
-	Stream_Read_UINT16(s, pdu.Flags); /* Flags (2 bytes) */
+	Stream_Read_UINT16(s, pdu.Flags);         /* Flags (2 bytes) */
 	Stream_Read_UINT32(s, pdu.ParticipantId); /* ParticipantId (4 bytes) */
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -639,7 +682,7 @@ static UINT encomsp_recv_change_participant_control_level_pdu(
 	IFCALLRET(context->ChangeParticipantControlLevel, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->ChangeParticipantControlLevel failed with error %"PRIu32"",
+		WLog_ERR(TAG, "context->ChangeParticipantControlLevel failed with error %" PRIu32 "",
 		         error);
 
 	return error;
@@ -651,16 +694,17 @@ static UINT encomsp_recv_change_participant_control_level_pdu(
  * @return 0 on success, otherwise a Win32 error code
  */
 static UINT encomsp_send_change_participant_control_level_pdu(
-    EncomspClientContext* context,
-    ENCOMSP_CHANGE_PARTICIPANT_CONTROL_LEVEL_PDU* pdu)
+    EncomspClientContext* context, const ENCOMSP_CHANGE_PARTICIPANT_CONTROL_LEVEL_PDU* pdu)
 {
 	wStream* s;
 	encomspPlugin* encomsp;
 	UINT error;
-	encomsp = (encomspPlugin*) context->handle;
-	pdu->Type = ODTYPE_PARTICIPANT_CTRL_CHANGED;
-	pdu->Length = ENCOMSP_ORDER_HEADER_SIZE + 6;
-	s = Stream_New(NULL, pdu->Length);
+	ENCOMSP_ORDER_HEADER header;
+
+	encomsp = (encomspPlugin*)context->handle;
+	header.Type = ODTYPE_PARTICIPANT_CTRL_CHANGED;
+	header.Length = ENCOMSP_ORDER_HEADER_SIZE + 6;
+	s = Stream_New(NULL, header.Length);
 
 	if (!s)
 	{
@@ -668,13 +712,13 @@ static UINT encomsp_send_change_participant_control_level_pdu(
 		return CHANNEL_RC_NO_MEMORY;
 	}
 
-	if ((error = encomsp_write_header(s, (ENCOMSP_ORDER_HEADER*) pdu)))
+	if ((error = encomsp_write_header(s, &header)))
 	{
-		WLog_ERR(TAG, "encomsp_write_header failed with error %"PRIu32"!", error);
+		WLog_ERR(TAG, "encomsp_write_header failed with error %" PRIu32 "!", error);
 		return error;
 	}
 
-	Stream_Write_UINT16(s, pdu->Flags); /* Flags (2 bytes) */
+	Stream_Write_UINT16(s, pdu->Flags);         /* Flags (2 bytes) */
 	Stream_Write_UINT32(s, pdu->ParticipantId); /* ParticipantId (4 bytes) */
 	Stream_SealLength(s);
 	return encomsp_virtual_channel_write(encomsp, s);
@@ -685,10 +729,10 @@ static UINT encomsp_send_change_participant_control_level_pdu(
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_graphics_stream_paused_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_graphics_stream_paused_pdu(encomspPlugin* encomsp, wStream* s,
+                                                    const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_GRAPHICS_STREAM_PAUSED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -697,9 +741,12 @@ static UINT encomsp_recv_graphics_stream_paused_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -721,7 +768,7 @@ static UINT encomsp_recv_graphics_stream_paused_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->GraphicsStreamPaused, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->GraphicsStreamPaused failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->GraphicsStreamPaused failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -731,10 +778,10 @@ static UINT encomsp_recv_graphics_stream_paused_pdu(encomspPlugin* encomsp,
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_recv_graphics_stream_resumed_pdu(encomspPlugin* encomsp,
-        wStream* s, ENCOMSP_ORDER_HEADER* header)
+static UINT encomsp_recv_graphics_stream_resumed_pdu(encomspPlugin* encomsp, wStream* s,
+                                                     const ENCOMSP_ORDER_HEADER* header)
 {
-	int beg, end;
+	size_t beg, end, pos;
 	EncomspClientContext* context;
 	ENCOMSP_GRAPHICS_STREAM_RESUMED_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
@@ -743,9 +790,12 @@ static UINT encomsp_recv_graphics_stream_resumed_pdu(encomspPlugin* encomsp,
 	if (!context)
 		return ERROR_INVALID_HANDLE;
 
-	beg = ((int) Stream_GetPosition(s)) - ENCOMSP_ORDER_HEADER_SIZE;
+	pos = Stream_GetPosition(s);
+	if (pos < ENCOMSP_ORDER_HEADER_SIZE)
+		return ERROR_INVALID_DATA;
+	beg = pos - ENCOMSP_ORDER_HEADER_SIZE;
 	CopyMemory(&pdu, header, sizeof(ENCOMSP_ORDER_HEADER));
-	end = (int) Stream_GetPosition(s);
+	end = Stream_GetPosition(s);
 
 	if ((beg + header->Length) < end)
 	{
@@ -767,7 +817,7 @@ static UINT encomsp_recv_graphics_stream_resumed_pdu(encomspPlugin* encomsp,
 	IFCALLRET(context->GraphicsStreamResumed, error, context, &pdu);
 
 	if (error)
-		WLog_ERR(TAG, "context->GraphicsStreamResumed failed with error %"PRIu32"", error);
+		WLog_ERR(TAG, "context->GraphicsStreamResumed failed with error %" PRIu32 "", error);
 
 	return error;
 }
@@ -786,18 +836,20 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 	{
 		if ((error = encomsp_read_header(s, &header)))
 		{
-			WLog_ERR(TAG, "encomsp_read_header failed with error %"PRIu32"!", error);
+			WLog_ERR(TAG, "encomsp_read_header failed with error %" PRIu32 "!", error);
 			return error;
 		}
 
-		//WLog_DBG(TAG, "EncomspReceive: Type: %"PRIu16" Length: %"PRIu16"", header.Type, header.Length);
+		// WLog_DBG(TAG, "EncomspReceive: Type: %"PRIu16" Length: %"PRIu16"", header.Type,
+		// header.Length);
 
 		switch (header.Type)
 		{
 			case ODTYPE_FILTER_STATE_UPDATED:
 				if ((error = encomsp_recv_filter_updated_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_filter_updated_pdu failed with error %"PRIu32"!", error);
+					WLog_ERR(TAG, "encomsp_recv_filter_updated_pdu failed with error %" PRIu32 "!",
+					         error);
 					return error;
 				}
 
@@ -806,7 +858,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_APP_REMOVED:
 				if ((error = encomsp_recv_application_removed_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_application_removed_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_application_removed_pdu failed with error %" PRIu32 "!",
 					         error);
 					return error;
 				}
@@ -816,7 +869,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_APP_CREATED:
 				if ((error = encomsp_recv_application_created_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_application_removed_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_application_removed_pdu failed with error %" PRIu32 "!",
 					         error);
 					return error;
 				}
@@ -826,7 +880,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_WND_REMOVED:
 				if ((error = encomsp_recv_window_removed_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_window_removed_pdu failed with error %"PRIu32"!", error);
+					WLog_ERR(TAG, "encomsp_recv_window_removed_pdu failed with error %" PRIu32 "!",
+					         error);
 					return error;
 				}
 
@@ -835,7 +890,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_WND_CREATED:
 				if ((error = encomsp_recv_window_created_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_window_created_pdu failed with error %"PRIu32"!", error);
+					WLog_ERR(TAG, "encomsp_recv_window_created_pdu failed with error %" PRIu32 "!",
+					         error);
 					return error;
 				}
 
@@ -844,7 +900,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_WND_SHOW:
 				if ((error = encomsp_recv_show_window_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_show_window_pdu failed with error %"PRIu32"!", error);
+					WLog_ERR(TAG, "encomsp_recv_show_window_pdu failed with error %" PRIu32 "!",
+					         error);
 					return error;
 				}
 
@@ -853,7 +910,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_PARTICIPANT_REMOVED:
 				if ((error = encomsp_recv_participant_removed_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_participant_removed_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_participant_removed_pdu failed with error %" PRIu32 "!",
 					         error);
 					return error;
 				}
@@ -863,7 +921,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_PARTICIPANT_CREATED:
 				if ((error = encomsp_recv_participant_created_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_participant_created_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_participant_created_pdu failed with error %" PRIu32 "!",
 					         error);
 					return error;
 				}
@@ -871,11 +930,12 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 				break;
 
 			case ODTYPE_PARTICIPANT_CTRL_CHANGED:
-				if ((error = encomsp_recv_change_participant_control_level_pdu(encomsp, s,
-				             &header)))
+				if ((error =
+				         encomsp_recv_change_participant_control_level_pdu(encomsp, s, &header)))
 				{
 					WLog_ERR(TAG,
-					         "encomsp_recv_change_participant_control_level_pdu failed with error %"PRIu32"!",
+					         "encomsp_recv_change_participant_control_level_pdu failed with error "
+					         "%" PRIu32 "!",
 					         error);
 					return error;
 				}
@@ -885,7 +945,9 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_GRAPHICS_STREAM_PAUSED:
 				if ((error = encomsp_recv_graphics_stream_paused_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_graphics_stream_paused_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_graphics_stream_paused_pdu failed with error %" PRIu32
+					         "!",
 					         error);
 					return error;
 				}
@@ -895,7 +957,9 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 			case ODTYPE_GRAPHICS_STREAM_RESUMED:
 				if ((error = encomsp_recv_graphics_stream_resumed_pdu(encomsp, s, &header)))
 				{
-					WLog_ERR(TAG, "encomsp_recv_graphics_stream_resumed_pdu failed with error %"PRIu32"!",
+					WLog_ERR(TAG,
+					         "encomsp_recv_graphics_stream_resumed_pdu failed with error %" PRIu32
+					         "!",
 					         error);
 					return error;
 				}
@@ -903,9 +967,8 @@ static UINT encomsp_process_receive(encomspPlugin* encomsp, wStream* s)
 				break;
 
 			default:
-				WLog_ERR(TAG, "header.Type %"PRIu16" not found", header.Type);
+				WLog_ERR(TAG, "header.Type %" PRIu16 " not found", header.Type);
 				return ERROR_INVALID_DATA;
-				break;
 		}
 	}
 
@@ -921,8 +984,9 @@ static void encomsp_process_connect(encomspPlugin* encomsp)
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp,
-        void* pData, UINT32 dataLength, UINT32 totalLength, UINT32 dataFlags)
+static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp, const void* pData,
+                                                        UINT32 dataLength, UINT32 totalLength,
+                                                        UINT32 dataFlags)
 {
 	wStream* data_in;
 
@@ -945,7 +1009,7 @@ static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp,
 
 	data_in = encomsp->data_in;
 
-	if (!Stream_EnsureRemainingCapacity(data_in, (int) dataLength))
+	if (!Stream_EnsureRemainingCapacity(data_in, dataLength))
 	{
 		WLog_ERR(TAG, "Stream_EnsureRemainingCapacity failed!");
 		return ERROR_INTERNAL_ERROR;
@@ -957,7 +1021,7 @@ static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp,
 	{
 		if (Stream_Capacity(data_in) != Stream_GetPosition(data_in))
 		{
-			WLog_ERR(TAG,  "encomsp_plugin_process_received: read error");
+			WLog_ERR(TAG, "encomsp_plugin_process_received: read error");
 			return ERROR_INVALID_DATA;
 		}
 
@@ -965,7 +1029,7 @@ static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp,
 		Stream_SealLength(data_in);
 		Stream_SetPosition(data_in, 0);
 
-		if (!MessageQueue_Post(encomsp->queue, NULL, 0, (void*) data_in, NULL))
+		if (!MessageQueue_Post(encomsp->queue, NULL, 0, (void*)data_in, NULL))
 		{
 			WLog_ERR(TAG, "MessageQueue_Post failed!");
 			return ERROR_INTERNAL_ERROR;
@@ -976,36 +1040,45 @@ static UINT encomsp_virtual_channel_event_data_received(encomspPlugin* encomsp,
 }
 
 static VOID VCAPITYPE encomsp_virtual_channel_open_event_ex(LPVOID lpUserParam, DWORD openHandle,
-        UINT event,
-        LPVOID pData, UINT32 dataLength, UINT32 totalLength, UINT32 dataFlags)
+                                                            UINT event, LPVOID pData,
+                                                            UINT32 dataLength, UINT32 totalLength,
+                                                            UINT32 dataFlags)
 {
 	UINT error = CHANNEL_RC_OK;
-	encomspPlugin* encomsp = (encomspPlugin*) lpUserParam;
-
-	if (!encomsp || (encomsp->OpenHandle != openHandle))
-	{
-		WLog_ERR(TAG,  "error no match");
-		return;
-	}
+	encomspPlugin* encomsp = (encomspPlugin*)lpUserParam;
 
 	switch (event)
 	{
 		case CHANNEL_EVENT_DATA_RECEIVED:
-			if ((error = encomsp_virtual_channel_event_data_received(encomsp, pData,
-			             dataLength, totalLength, dataFlags)))
-				WLog_ERR(TAG, "encomsp_virtual_channel_event_data_received failed with error %"PRIu32"", error);
+			if (!encomsp || (encomsp->OpenHandle != openHandle))
+			{
+				WLog_ERR(TAG, "error no match");
+				return;
+			}
+			if ((error = encomsp_virtual_channel_event_data_received(encomsp, pData, dataLength,
+			                                                         totalLength, dataFlags)))
+				WLog_ERR(TAG,
+				         "encomsp_virtual_channel_event_data_received failed with error %" PRIu32
+				         "",
+				         error);
 
 			break;
 
+		case CHANNEL_EVENT_WRITE_CANCELLED:
 		case CHANNEL_EVENT_WRITE_COMPLETE:
-			break;
+		{
+			wStream* s = (wStream*)pData;
+			Stream_Free(s, TRUE);
+		}
+		break;
 
 		case CHANNEL_EVENT_USER:
 			break;
 	}
 
-	if (error && encomsp->rdpcontext)
-		setChannelError(encomsp->rdpcontext, error, "encomsp_virtual_channel_open_event reported an error");
+	if (error && encomsp && encomsp->rdpcontext)
+		setChannelError(encomsp->rdpcontext, error,
+		                "encomsp_virtual_channel_open_event reported an error");
 
 	return;
 }
@@ -1014,7 +1087,7 @@ static DWORD WINAPI encomsp_virtual_channel_client_thread(LPVOID arg)
 {
 	wStream* data;
 	wMessage message;
-	encomspPlugin* encomsp = (encomspPlugin*) arg;
+	encomspPlugin* encomsp = (encomspPlugin*)arg;
 	UINT error = CHANNEL_RC_OK;
 	encomsp_process_connect(encomsp);
 
@@ -1039,13 +1112,16 @@ static DWORD WINAPI encomsp_virtual_channel_client_thread(LPVOID arg)
 
 		if (message.id == 0)
 		{
-			data = (wStream*) message.wParam;
+			data = (wStream*)message.wParam;
 
 			if ((error = encomsp_process_receive(encomsp, data)))
 			{
-				WLog_ERR(TAG, "encomsp_process_receive failed with error %"PRIu32"!", error);
+				WLog_ERR(TAG, "encomsp_process_receive failed with error %" PRIu32 "!", error);
+				Stream_Free(data, TRUE);
 				break;
 			}
+
+			Stream_Free(data, TRUE);
 		}
 	}
 
@@ -1062,20 +1138,10 @@ static DWORD WINAPI encomsp_virtual_channel_client_thread(LPVOID arg)
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-static UINT encomsp_virtual_channel_event_connected(encomspPlugin* encomsp,
-        LPVOID pData, UINT32 dataLength)
+static UINT encomsp_virtual_channel_event_connected(encomspPlugin* encomsp, LPVOID pData,
+                                                    UINT32 dataLength)
 {
-	UINT32 status;
-	status = encomsp->channelEntryPoints.pVirtualChannelOpenEx(encomsp->InitHandle,
-	         &encomsp->OpenHandle, encomsp->channelDef.name,
-	         encomsp_virtual_channel_open_event_ex);
-
-	if (status != CHANNEL_RC_OK)
-	{
-		WLog_ERR(TAG, "pVirtualChannelOpen failed with %s [%08"PRIX32"]",
-		         WTSErrorToString(status), status);
-		return status;
-	}
+	WINPR_ASSERT(encomsp);
 
 	encomsp->queue = MessageQueue_New(NULL);
 
@@ -1085,16 +1151,17 @@ static UINT encomsp_virtual_channel_event_connected(encomspPlugin* encomsp,
 		return CHANNEL_RC_NO_MEMORY;
 	}
 
-	if (!(encomsp->thread = CreateThread(NULL, 0,
-	                                     encomsp_virtual_channel_client_thread, (void*) encomsp,
-	                                     0, NULL)))
+	if (!(encomsp->thread = CreateThread(NULL, 0, encomsp_virtual_channel_client_thread,
+	                                     (void*)encomsp, 0, NULL)))
 	{
 		WLog_ERR(TAG, "CreateThread failed!");
 		MessageQueue_Free(encomsp->queue);
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	return CHANNEL_RC_OK;
+	return encomsp->channelEntryPoints.pVirtualChannelOpenEx(
+	    encomsp->InitHandle, &encomsp->OpenHandle, encomsp->channelDef.name,
+	    encomsp_virtual_channel_open_event_ex);
 }
 
 /**
@@ -1109,24 +1176,30 @@ static UINT encomsp_virtual_channel_event_disconnected(encomspPlugin* encomsp)
 	if (encomsp->OpenHandle == 0)
 		return CHANNEL_RC_OK;
 
-	if (MessageQueue_PostQuit(encomsp->queue, 0)
-	    && (WaitForSingleObject(encomsp->thread, INFINITE) == WAIT_FAILED))
+	if (encomsp->queue && encomsp->thread)
 	{
-		rc = GetLastError();
-		WLog_ERR(TAG, "WaitForSingleObject failed with error %"PRIu32"", rc);
-		return rc;
+		if (MessageQueue_PostQuit(encomsp->queue, 0) &&
+		    (WaitForSingleObject(encomsp->thread, INFINITE) == WAIT_FAILED))
+		{
+			rc = GetLastError();
+			WLog_ERR(TAG, "WaitForSingleObject failed with error %" PRIu32 "", rc);
+			return rc;
+		}
 	}
 
 	MessageQueue_Free(encomsp->queue);
 	CloseHandle(encomsp->thread);
 	encomsp->queue = NULL;
 	encomsp->thread = NULL;
-	rc = encomsp->channelEntryPoints.pVirtualChannelCloseEx(encomsp->InitHandle, encomsp->OpenHandle);
+
+	WINPR_ASSERT(encomsp->channelEntryPoints.pVirtualChannelCloseEx);
+	rc = encomsp->channelEntryPoints.pVirtualChannelCloseEx(encomsp->InitHandle,
+	                                                        encomsp->OpenHandle);
 
 	if (CHANNEL_RC_OK != rc)
 	{
-		WLog_ERR(TAG, "pVirtualChannelClose failed with %s [%08"PRIX32"]",
-		         WTSErrorToString(rc), rc);
+		WLog_ERR(TAG, "pVirtualChannelClose failed with %s [%08" PRIX32 "]", WTSErrorToString(rc),
+		         rc);
 		return rc;
 	}
 
@@ -1140,7 +1213,6 @@ static UINT encomsp_virtual_channel_event_disconnected(encomspPlugin* encomsp)
 
 	return CHANNEL_RC_OK;
 }
-
 
 /**
  * Function description
@@ -1156,23 +1228,24 @@ static UINT encomsp_virtual_channel_event_terminated(encomspPlugin* encomsp)
 }
 
 static VOID VCAPITYPE encomsp_virtual_channel_init_event_ex(LPVOID lpUserParam, LPVOID pInitHandle,
-        UINT event, LPVOID pData, UINT dataLength)
+                                                            UINT event, LPVOID pData,
+                                                            UINT dataLength)
 {
 	UINT error = CHANNEL_RC_OK;
-	encomspPlugin* encomsp = (encomspPlugin*) lpUserParam;
+	encomspPlugin* encomsp = (encomspPlugin*)lpUserParam;
 
 	if (!encomsp || (encomsp->InitHandle != pInitHandle))
 	{
-		WLog_ERR(TAG,  "error no match");
+		WLog_ERR(TAG, "error no match");
 		return;
 	}
 
 	switch (event)
 	{
 		case CHANNEL_EVENT_CONNECTED:
-			if ((error = encomsp_virtual_channel_event_connected(encomsp, pData,
-			             dataLength)))
-				WLog_ERR(TAG, "encomsp_virtual_channel_event_connected failed with error %"PRIu32"",
+			if ((error = encomsp_virtual_channel_event_connected(encomsp, pData, dataLength)))
+				WLog_ERR(TAG,
+				         "encomsp_virtual_channel_event_connected failed with error %" PRIu32 "",
 				         error);
 
 			break;
@@ -1180,7 +1253,8 @@ static VOID VCAPITYPE encomsp_virtual_channel_init_event_ex(LPVOID lpUserParam, 
 		case CHANNEL_EVENT_DISCONNECTED:
 			if ((error = encomsp_virtual_channel_event_disconnected(encomsp)))
 				WLog_ERR(TAG,
-				         "encomsp_virtual_channel_event_disconnected failed with error %"PRIu32"", error);
+				         "encomsp_virtual_channel_event_disconnected failed with error %" PRIu32 "",
+				         error);
 
 			break;
 
@@ -1189,15 +1263,16 @@ static VOID VCAPITYPE encomsp_virtual_channel_init_event_ex(LPVOID lpUserParam, 
 			break;
 
 		default:
-			WLog_ERR(TAG, "Unhandled event type %"PRIu32"", event);
+			break;
 	}
 
 	if (error && encomsp->rdpcontext)
-		setChannelError(encomsp->rdpcontext, error, "encomsp_virtual_channel_init_event reported an error");
+		setChannelError(encomsp->rdpcontext, error,
+		                "encomsp_virtual_channel_init_event reported an error");
 }
 
 /* encomsp is always built-in */
-#define VirtualChannelEntryEx	encomsp_VirtualChannelEntryEx
+#define VirtualChannelEntryEx encomsp_VirtualChannelEntryEx
 
 BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOID pInitHandle)
 {
@@ -1206,7 +1281,7 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOI
 	EncomspClientContext* context = NULL;
 	CHANNEL_ENTRY_POINTS_FREERDP_EX* pEntryPointsEx;
 	BOOL isFreerdp = FALSE;
-	encomsp = (encomspPlugin*) calloc(1, sizeof(encomspPlugin));
+	encomsp = (encomspPlugin*)calloc(1, sizeof(encomspPlugin));
 
 	if (!encomsp)
 	{
@@ -1214,18 +1289,16 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOI
 		return FALSE;
 	}
 
-	encomsp->channelDef.options =
-	    CHANNEL_OPTION_INITIALIZED |
-	    CHANNEL_OPTION_ENCRYPT_RDP |
-	    CHANNEL_OPTION_COMPRESS_RDP |
-	    CHANNEL_OPTION_SHOW_PROTOCOL;
-	sprintf_s(encomsp->channelDef.name, ARRAYSIZE(encomsp->channelDef.name), "encomsp");
-	pEntryPointsEx = (CHANNEL_ENTRY_POINTS_FREERDP_EX*) pEntryPoints;
+	encomsp->channelDef.options = CHANNEL_OPTION_INITIALIZED | CHANNEL_OPTION_ENCRYPT_RDP |
+	                              CHANNEL_OPTION_COMPRESS_RDP | CHANNEL_OPTION_SHOW_PROTOCOL;
+	sprintf_s(encomsp->channelDef.name, ARRAYSIZE(encomsp->channelDef.name),
+	          ENCOMSP_SVC_CHANNEL_NAME);
+	pEntryPointsEx = (CHANNEL_ENTRY_POINTS_FREERDP_EX*)pEntryPoints;
 
 	if ((pEntryPointsEx->cbSize >= sizeof(CHANNEL_ENTRY_POINTS_FREERDP_EX)) &&
 	    (pEntryPointsEx->MagicNumber == FREERDP_CHANNEL_MAGIC_NUMBER))
 	{
-		context = (EncomspClientContext*) calloc(1, sizeof(EncomspClientContext));
+		context = (EncomspClientContext*)calloc(1, sizeof(EncomspClientContext));
 
 		if (!context)
 		{
@@ -1233,7 +1306,7 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOI
 			goto error_out;
 		}
 
-		context->handle = (void*) encomsp;
+		context->handle = (void*)encomsp;
 		context->FilterUpdated = NULL;
 		context->ApplicationCreated = NULL;
 		context->ApplicationRemoved = NULL;
@@ -1242,8 +1315,7 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOI
 		context->ShowWindow = NULL;
 		context->ParticipantCreated = NULL;
 		context->ParticipantRemoved = NULL;
-		context->ChangeParticipantControlLevel =
-		    encomsp_send_change_participant_control_level_pdu;
+		context->ChangeParticipantControlLevel = encomsp_send_change_participant_control_level_pdu;
 		context->GraphicsStreamPaused = NULL;
 		context->GraphicsStreamResumed = NULL;
 		encomsp->context = context;
@@ -1254,14 +1326,13 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_EX pEntryPoints, PVOI
 	CopyMemory(&(encomsp->channelEntryPoints), pEntryPoints,
 	           sizeof(CHANNEL_ENTRY_POINTS_FREERDP_EX));
 	encomsp->InitHandle = pInitHandle;
-	rc = encomsp->channelEntryPoints.pVirtualChannelInitEx(encomsp, context, pInitHandle,
-	        &encomsp->channelDef, 1, VIRTUAL_CHANNEL_VERSION_WIN2000,
-	        encomsp_virtual_channel_init_event_ex);
+	rc = encomsp->channelEntryPoints.pVirtualChannelInitEx(
+	    encomsp, context, pInitHandle, &encomsp->channelDef, 1, VIRTUAL_CHANNEL_VERSION_WIN2000,
+	    encomsp_virtual_channel_init_event_ex);
 
 	if (CHANNEL_RC_OK != rc)
 	{
-		WLog_ERR(TAG, "failed with %s [%08"PRIX32"]",
-		         WTSErrorToString(rc), rc);
+		WLog_ERR(TAG, "failed with %s [%08" PRIX32 "]", WTSErrorToString(rc), rc);
 		goto error_out;
 	}
 

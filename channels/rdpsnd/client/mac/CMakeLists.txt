@@ -19,12 +19,14 @@
 
 define_channel_client_subsystem("rdpsnd" "mac" "")
 
-FIND_LIBRARY(CORE_AUDIO CoreAudio)
-FIND_LIBRARY(AUDIO_TOOL AudioToolbox)
+find_library(COCOA_LIBRARY Cocoa REQUIRED)
 FIND_LIBRARY(CORE_FOUNDATION CoreFoundation)
+FIND_LIBRARY(CORE_AUDIO CoreAudio REQUIRED)
+FIND_LIBRARY(AUDIO_TOOL AudioToolbox REQUIRED)
+FIND_LIBRARY(AV_FOUNDATION AVFoundation REQUIRED)
 
 set(${MODULE_PREFIX}_SRCS
-	rdpsnd_mac.c)
+	rdpsnd_mac.m)
 
 include_directories(..)
 include_directories(${MACAUDIO_INCLUDE_DIRS})
@@ -35,7 +37,9 @@ add_channel_client_subsystem_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_N
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} 
     ${AUDIO_TOOL}
+    ${AV_FOUNDATION}
     ${CORE_AUDIO}
+    ${COCOA_LIBRARY}
     ${CORE_FOUNDATION})
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp winpr)

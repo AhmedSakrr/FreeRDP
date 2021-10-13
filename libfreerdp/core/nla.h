@@ -48,8 +48,7 @@ enum _NLA_STATE
 typedef enum _NLA_STATE NLA_STATE;
 
 FREERDP_LOCAL int nla_authenticate(rdpNla* nla);
-FREERDP_LOCAL LPTSTR nla_make_spn(const char* ServiceClass,
-                                  const char* hostname);
+FREERDP_LOCAL LPTSTR nla_make_spn(const char* ServiceClass, const char* hostname);
 
 FREERDP_LOCAL int nla_client_begin(rdpNla* nla);
 FREERDP_LOCAL int nla_recv_pdu(rdpNla* nla, wStream* s);
@@ -58,14 +57,16 @@ FREERDP_LOCAL SEC_WINNT_AUTH_IDENTITY* nla_get_identity(rdpNla* nla);
 
 FREERDP_LOCAL NLA_STATE nla_get_state(rdpNla* nla);
 FREERDP_LOCAL BOOL nla_set_state(rdpNla* nla, NLA_STATE state);
+FREERDP_LOCAL const char* nla_get_state_str(NLA_STATE state);
 
-FREERDP_LOCAL BOOL nla_set_service_principal(rdpNla* nla, LPSTR principal);
+FREERDP_LOCAL DWORD nla_get_error(rdpNla* nla);
+
+FREERDP_LOCAL BOOL nla_set_service_principal(rdpNla* nla, LPTSTR principal);
 
 FREERDP_LOCAL BOOL nla_impersonate(rdpNla* nla);
 FREERDP_LOCAL BOOL nla_revert_to_self(rdpNla* nla);
 
-FREERDP_LOCAL rdpNla* nla_new(freerdp* instance, rdpTransport* transport,
-                              rdpSettings* settings);
+FREERDP_LOCAL rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* settings);
 FREERDP_LOCAL void nla_free(rdpNla* nla);
 
 #endif /* FREERDP_LIB_CORE_NLA_H */

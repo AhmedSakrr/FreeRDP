@@ -105,9 +105,9 @@ fail:
 	return status;
 }
 
-static void shadow_subsystem_free_queued_message(void *obj)
+static void shadow_subsystem_free_queued_message(void* obj)
 {
-	wMessage *message = (wMessage*)obj;
+	wMessage* message = (wMessage*)obj;
 	if (message->Free)
 	{
 		message->Free(message);
@@ -125,10 +125,16 @@ void shadow_subsystem_uninit(rdpShadowSubsystem* subsystem)
 
 	if (subsystem->MsgPipe)
 	{
+		wObject* obj1;
+		wObject* obj2;
 		/* Release resource in messages before free */
-		subsystem->MsgPipe->In->object.fnObjectFree = shadow_subsystem_free_queued_message;
-		MessageQueue_Clear(subsystem->MsgPipe->In);
-		subsystem->MsgPipe->Out->object.fnObjectFree = shadow_subsystem_free_queued_message;
+		obj1 = MessageQueue_Object(subsystem->MsgPipe->In);
+
+		    obj1->fnObjectFree = shadow_subsystem_free_queued_message;
+		    MessageQueue_Clear(subsystem->MsgPipe->In);
+
+		    obj2 = MessageQueue_Object(subsystem->MsgPipe->Out);
+		    obj2->fnObjectFree = shadow_subsystem_free_queued_message;
 		MessageQueue_Clear(subsystem->MsgPipe->Out);
 		MessagePipe_Free(subsystem->MsgPipe);
 		subsystem->MsgPipe = NULL;
@@ -171,7 +177,7 @@ UINT32 shadow_enum_monitors(MONITOR_DEF* monitors, UINT32 maxMonitors)
 	RDP_SHADOW_ENTRY_POINTS ep;
 
 	if (shadow_subsystem_load_entry_points(&ep) < 0)
-		return -1;
+		return 0;
 
 	numMonitors = ep.EnumMonitors(monitors, maxMonitors);
 
@@ -184,14 +190,15 @@ UINT32 shadow_enum_monitors(MONITOR_DEF* monitors, UINT32 maxMonitors)
  * and andmask data and fill into SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE
  * Caller should free the andMaskData and xorMaskData later.
  */
-int shadow_subsystem_pointer_convert_alpha_pointer_data(BYTE* pixels, BOOL premultiplied,
-		UINT32 width, UINT32 height, SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE* pointerColor)
+int shadow_subsystem_pointer_convert_alpha_pointer_data(
+    BYTE* pixels, BOOL premultiplied, UINT32 width, UINT32 height,
+    SHADOW_MSG_OUT_POINTER_ALPHA_UPDATE* pointerColor)
 {
 	UINT32 x, y;
 	BYTE* pSrc8;
 	BYTE* pDst8;
-	int xorStep;
-	int andStep;
+	UINT32 xorStep;
+	UINT32 andStep;
 	UINT32 andBit;
 	BYTE* andBits;
 	UINT32 andPixel;
@@ -204,13 +211,13 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data(BYTE* pixels, BOOL premu
 	andStep += (andStep % 2);
 
 	pointerColor->lengthXorMask = height * xorStep;
-	pointerColor->xorMaskData = (BYTE*) calloc(1, pointerColor->lengthXorMask);
+	pointerColor->xorMaskData = (BYTE*)calloc(1, pointerColor->lengthXorMask);
 
 	if (!pointerColor->xorMaskData)
 		return -1;
 
 	pointerColor->lengthAndMask = height * andStep;
-	pointerColor->andMaskData = (BYTE*) calloc(1, pointerColor->lengthAndMask);
+	pointerColor->andMaskData = (BYTE*)calloc(1, pointerColor->lengthAndMask);
 
 	if (!pointerColor->andMaskData)
 	{
@@ -249,9 +256,9 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data(BYTE* pixels, BOOL premu
 			{
 				if (premultiplied)
 				{
-					B = (B * 0xFF ) / A;
-					G = (G * 0xFF ) / A;
-					R = (R * 0xFF ) / A;
+					B = (B * 0xFF) / A;
+					G = (G * 0xFF) / A;
+					R = (R * 0xFF) / A;
 				}
 			}
 
@@ -259,8 +266,13 @@ int shadow_subsystem_pointer_convert_alpha_pointer_data(BYTE* pixels, BOOL premu
 			*pDst8++ = G;
 			*pDst8++ = R;
 
-			if (andPixel) *andBits |= andBit;
-			if (!(andBit >>= 1)) { andBits++; andBit = 0x80; }
+			if (andPixel)
+				*andBits |= andBit;
+			if (!(andBit >>= 1))
+			{
+				andBits++;
+				andBit = 0x80;
+			}
 		}
 	}
 
